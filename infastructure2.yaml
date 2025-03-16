@@ -427,7 +427,7 @@ Resources:
 Outputs:
   VPCId:
     Description: VPC ID
-    Value: !Ref S3AppVPC
+    Value: !Ref VPC
   ALBEndpoint:
     Description: Application Load Balancer DNS Name
     Value: !GetAtt ALB.DNSName
