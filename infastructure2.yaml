@@ -213,7 +213,7 @@ Resources:
   ECSLoadBalancerTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: tag-finder-target-group-blue
+      Name: s3-app-target-group-blue
       Port: 3000
       Protocol: HTTP
       VpcId: !Ref VPC
@@ -229,7 +229,7 @@ Resources:
   ECSLoadBalancerTargetGroup2:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: tag-finder-target-group-green
+      Name: s3-app-target-group-green
       Port: 3000
       Protocol: HTTP
       VpcId: !Ref VPC
@@ -380,7 +380,7 @@ Resources:
       RoleArn: !GetAtt CodePipelineRole.Arn
       ArtifactStore:
         Type: S3
-        Location: tag-finder-s3
+        Location: week5-lab-bucket-nicholas
       Stages:
         - Name: Source
           Actions:
