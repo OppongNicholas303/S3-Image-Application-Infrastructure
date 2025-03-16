@@ -254,7 +254,7 @@ Resources:
             - !Ref ECSServiceSecurityGroup
       LoadBalancers:
         - TargetGroupArn: !Ref ECSLoadBalancerTargetGroup
-          ContainerName: S3AppContainer
+          ContainerName: s3-app-container
           ContainerPort: 3000
       PropagateTags: SERVICE
       EnableECSManagedTags: true
