@@ -128,6 +128,36 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
+  # CodeBuild Role
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:CreateLogGroup
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource: '*'
+
   # Create log group
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
@@ -208,7 +238,7 @@ Resources:
   ECSLoadBalancerTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: s3-app-target-group-blue
+      Name: tag-finder-target-group-blue
       Port: 3000
       Protocol: HTTP
       VpcId: !Ref VPC
@@ -224,7 +254,7 @@ Resources:
   ECSLoadBalancerTargetGroup2:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: s3-app-target-group-green
+      Name: tag-finder-target-group-green
       Port: 3000
       Protocol: HTTP
       VpcId: !Ref VPC
@@ -399,7 +429,7 @@ Resources:
       RoleArn: !GetAtt CodePipelineRole.Arn
       ArtifactStore:
         Type: S3
-        Location: week5-lab-bucket-nicholas
+        Location: tag-finder-s3
       Stages:
         - Name: Source
           Actions:
