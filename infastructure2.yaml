@@ -436,6 +436,13 @@ Resources:
       ECSServices:
         - ClusterName: !Ref Cluster
           ServiceName: !GetAtt ECSService.Name
+      LoadBalancerInfo:
+        TargetGroupPairInfoList:
+          - TargetGroups:
+              - Name: !GetAtt ECSLoadBalancerTargetGroup.TargetGroupName
+            ProdTrafficRoute:
+              ListenerArns:
+                - !Ref Listener
 
 
 Outputs:
