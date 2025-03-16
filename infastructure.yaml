@@ -206,6 +206,23 @@ Resources:
             - ContainerPort: 3000
               HostPort: 3000
 
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS security group
+      VpcId: !Ref S3AppMyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0  # Adjust as needed for security
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0  # Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: ECSSecurityGroup
+
   ECSService:
     Type: AWS::ECS::Service
     Properties:
@@ -219,12 +236,12 @@ Resources:
             - !Ref S3AppPrivateSubnet1
             - !Ref S3AppPrivateSubnet2
           SecurityGroups:
-            - !Ref ECSSecurityGroup
+            - !Ref ECSSecurityGroup  # Reference the newly created security group
           AssignPublicIp: DISABLED
       LoadBalancers:
         - TargetGroupArn: !Ref TargetGroup
           ContainerName: S3AppContainer
-          ContainerPort: 3000  # Update to the correct port
+          ContainerPort: 3000
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
