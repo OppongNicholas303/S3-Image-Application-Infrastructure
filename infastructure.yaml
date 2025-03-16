@@ -6,8 +6,8 @@ Parameters:
     Type: String
     Description: "URI of the Docker image in ECR"
 
-
 Resources:
+  # VPC and Networking Resources
   S3AppMyVPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -27,6 +27,7 @@ Resources:
       VpcId: !Ref S3AppMyVPC
       InternetGatewayId: !Ref InternetGateway
 
+  # Subnets
   S3AppPublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -69,6 +70,7 @@ Resources:
         - Key: Name
           Value: S3AppPrivateSubnet2
 
+  # Route Tables and Routes
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -84,6 +86,18 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref S3AppPublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref S3AppPublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
 
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
@@ -105,36 +119,28 @@ Resources:
       SubnetId: !Ref S3AppPrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable
 
+  # S3 VPC Endpoint
   S3Endpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
       VpcId: !Ref S3AppMyVPC
       ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
       RouteTableIds:
-        - !Ref PrivateRouteTable  # Attach to private route table
+        - !Ref PrivateRouteTable
       VpcEndpointType: Gateway
       Tags:
         - Key: Name
           Value: S3Endpoint
 
-  ALB:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  # S3 Bucket
+  S3Bucket:
+    Type: AWS::S3::Bucket
     Properties:
-      Name: MyALB
-      Subnets:
-        - !Ref S3AppPublicSubnet1
-        - !Ref S3AppPublicSubnet2
-      SecurityGroups:
-        - !Ref ALBSecurityGroup
-      Scheme: internet-facing
-      LoadBalancerAttributes:
-        - Key: idle_timeout.timeout_seconds
-          Value: '60'
-      Type: application
-      Tags:
-        - Key: Name
-          Value: MyALB
+      BucketName: week5-lab-bucket-nicholas-new
+      VersioningConfiguration:
+        Status: Enabled
 
+  # Security Groups
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -152,13 +158,73 @@ Resources:
         - Key: Name
           Value: ALBSecurityGroup
 
-  S3Bucket:
-    Type: AWS::S3::Bucket
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      BucketName: week5-lab-bucket-nicholas
-      VersioningConfiguration:
-        Status: Enabled
+      GroupDescription: ECS security group
+      VpcId: !Ref S3AppMyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: ECSSecurityGroup
 
+  # Application Load Balancer Resources
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: AttachGateway
+    Properties:
+      Name: MyALB
+      Subnets:
+        - !Ref S3AppPublicSubnet1
+        - !Ref S3AppPublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Type: application
+      Tags:
+        - Key: Name
+          Value: MyALB
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: S3AppTargetGroup
+      VpcId: !Ref S3AppMyVPC
+      Protocol: HTTP
+      Port: 3000
+      TargetType: ip
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  # Add ALB Listener - This is critical for the ECS service to work
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: 
+      - ALB
+      - TargetGroup
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+
+  # ECS Resources
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
@@ -186,49 +252,50 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub "arn:aws:s3:::<Your-S3-Bucket-Name>"
-                  - !Sub "arn:aws:s3:::<Your-S3-Bucket-Name>/*"
+                  - !Sub "arn:aws:s3:::week5-lab-bucket-nicholas-new"
+                  - !Sub "arn:aws:s3:::week5-lab-bucket-nicholas-new/*"
+        - PolicyName: ECSExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
 
-  # Update Task Definition to use the IAM Role
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Family: S3AppTask
+      RequiresCompatibilities:
+        - FARGATE
       NetworkMode: awsvpc
       ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSExecutionRole.Arn
+      Memory: "2048"
+      Cpu: "4096"
       ContainerDefinitions:
         - Name: S3AppContainer
-          Image: !Ref ImageUri  # Use the parameter here
+          Image: !Ref ImageUri
           Essential: true
-          Memory: 512
-          CPU: 256
           PortMappings:
             - ContainerPort: 3000
-              HostPort: 3000
-
-  ECSSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: ECS security group
-      VpcId: !Ref S3AppMyVPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 3000
-          ToPort: 3000
-          CidrIp: 0.0.0.0/0  # Adjust as needed for security
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0  # Allow all outbound traffic
-      Tags:
-        - Key: Name
-          Value: ECSSecurityGroup
 
   ECSService:
     Type: AWS::ECS::Service
+    DependsOn: 
+      - HTTPListener
     Properties:
       Cluster: !Ref ECSCluster
       TaskDefinition: !Ref TaskDefinition
-      DesiredCount: 2
+      DesiredCount: 1
       LaunchType: FARGATE
       NetworkConfiguration:
         AwsvpcConfiguration:
@@ -236,40 +303,14 @@ Resources:
             - !Ref S3AppPrivateSubnet1
             - !Ref S3AppPrivateSubnet2
           SecurityGroups:
-            - !Ref ECSSecurityGroup  # Reference the newly created security group
+            - !Ref ECSSecurityGroup
           AssignPublicIp: DISABLED
       LoadBalancers:
         - TargetGroupArn: !Ref TargetGroup
           ContainerName: S3AppContainer
           ContainerPort: 3000
 
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: S3AppTargetGroup
-      VpcId: !Ref S3AppMyVPC
-      Protocol: HTTP
-      Port: 3000  # Ensure this matches your application port
-      TargetType: ip
-      HealthCheckProtocol: HTTP
-      HealthCheckPath: /
-      HealthCheckIntervalSeconds: 30
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 2
-  
-    # ECS Auto Scaling Group
-  ECSAutoScalingGroup:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    Properties:
-      MaxCapacity: 10
-      MinCapacity: 1
-      ResourceId: !Sub "service/${ECSCluster}/${ECSService}"
-      RoleARN: !GetAtt ApplicationAutoScalingRole.Arn
-      ScalableDimension: "ecs:service:DesiredCount"
-      ServiceNamespace: "ecs"
-
-  # IAM Role for Application Auto Scaling
+  # Auto Scaling Resources
   ApplicationAutoScalingRole:
     Type: AWS::IAM::Role
     Properties:
@@ -295,7 +336,44 @@ Resources:
                   - cloudwatch:DeleteAlarms
                 Resource: "*"
 
-  # Create CloudWatch Alarms for Scaling
+  ECSAutoScalingGroup:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: ECSService
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId: !Sub "service/${ECSCluster}/${ECSService}"
+      RoleARN: !GetAtt ApplicationAutoScalingRole.Arn
+      ScalableDimension: "ecs:service:DesiredCount"
+      ServiceNamespace: "ecs"
+
+  ScaleOutPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: "ScaleOutPolicy"
+      PolicyType: "StepScaling"
+      ScalingTargetId: !Ref ECSAutoScalingGroup
+      StepScalingPolicyConfiguration:
+        AdjustmentType: "PercentChangeInCapacity"
+        StepAdjustments:
+          - ScalingAdjustment: 100
+            MetricIntervalLowerBound: 0
+        Cooldown: 300
+
+  ScaleInPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: "ScaleInPolicy"
+      PolicyType: "StepScaling"
+      ScalingTargetId: !Ref ECSAutoScalingGroup
+      StepScalingPolicyConfiguration:
+        AdjustmentType: "PercentChangeInCapacity"
+        StepAdjustments:
+          - ScalingAdjustment: -100
+            MetricIntervalUpperBound: 0
+        Cooldown: 300
+
+  # CloudWatch Alarms
   HighCPUAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -334,33 +412,6 @@ Resources:
       AlarmActions:
         - !Ref ScaleInPolicy
 
-  # Scaling Policies
-  ScaleOutPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: "ScaleOutPolicy"
-      PolicyType: "StepScaling"
-      ScalingTargetId: !Ref ECSAutoScalingGroup
-      StepScalingPolicyConfiguration:
-        AdjustmentType: "PercentChangeInCapacity"
-        StepAdjustments:
-          - ScalingAdjustment: 100
-            MetricIntervalLowerBound: 0
-        Cooldown: 300
-
-  ScaleInPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: "ScaleInPolicy"
-      PolicyType: "StepScaling"
-      ScalingTargetId: !Ref ECSAutoScalingGroup
-      StepScalingPolicyConfiguration:
-        AdjustmentType: "PercentChangeInCapacity"
-        StepAdjustments:
-          - ScalingAdjustment: -100
-            MetricIntervalUpperBound: 0
-        Cooldown: 300
-
 Outputs:
   VPCId:
     Description: VPC ID
@@ -368,5 +419,3 @@ Outputs:
   ALBEndpoint:
     Description: Application Load Balancer DNS Name
     Value: !GetAtt ALB.DNSName
-
-  
