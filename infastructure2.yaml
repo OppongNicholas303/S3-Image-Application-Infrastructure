@@ -28,7 +28,6 @@ Resources:
         - Key: Name
           Value: S3AppPublicSubnet1
 
-  # Public submet 2
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
@@ -153,7 +152,6 @@ Resources:
           Image: !Ref ImageUri
           PortMappings:
             - ContainerPort: 3000
-              # HostPort: 80
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -179,7 +177,6 @@ Resources:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
-
   ECSServiceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -194,7 +191,6 @@ Resources:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
-
   # Application Load Balancer
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -207,7 +203,6 @@ Resources:
         - !Ref LoadBalancerSecurityGroup
       Scheme: internet-facing
       Type: application
-
 
   # Application Load Balancer Primary Target Group
   ECSLoadBalancerTargetGroup:
@@ -240,7 +235,6 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
-
 
   # Application Load Balancer Listener (for HTTP traffic)
   Listener:
@@ -281,6 +275,32 @@ Resources:
       EnableECSManagedTags: true
     DependsOn:
       - Listener
+
+  # CodeBuild Project
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: MyECSBuildProject
+      Source:
+        Type: CODEPIPELINE
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:5.0
+        Type: LINUX_CONTAINER
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      TimeoutInMinutes: 10
+      BuildSpec: |
+        version: 0.2
+        phases:
+          build:
+            commands:
+              - echo "Building task definition"
+              - # Add commands to generate TaskDefinition.json
+        artifacts:
+          files:
+            - TaskDefinition.json  # Ensure this matches your output file
 
   # IAM Role for Auto Scaling
   ECSAutoScalingRole:
@@ -346,7 +366,6 @@ Resources:
         ScaleInCooldown: 60
         ScaleOutCooldown: 60
 
-
   CodePipelineRole:
     Type: AWS::IAM::Role
     Properties:
@@ -395,6 +414,18 @@ Resources:
                 ImageTag: latest
               OutputArtifacts:
                 - Name: SourceOutput
+        - Name: Build
+          Actions:
+            - Name: BuildTaskDefinition
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              OutputArtifacts:
+                - Name: TaskDefinitionOutput
         - Name: Deploy
           Actions:
             - Name: DeployAction
@@ -406,6 +437,8 @@ Resources:
               Configuration:
                 ApplicationName: !Ref CodeDeployApplication
                 DeploymentGroupName: !Ref CodeDeployGroup
+                TaskDefinitionTemplateArtifact: TaskDefinitionOutput
+                TaskDefinitionTemplatePath: TaskDefinition.json
               InputArtifacts:
                 - Name: SourceOutput
 
@@ -415,7 +448,6 @@ Resources:
     Properties:
       ComputePlatform: ECS
 
-  
   CodeDeployRole:
     Type: AWS::IAM::Role
     Properties:
