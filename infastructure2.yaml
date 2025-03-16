@@ -148,7 +148,7 @@ Resources:
       ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
       TaskRoleArn: !GetAtt S3AccessRole.Arn
       ContainerDefinitions:
-        - Name: tag-finder-container
+        - Name: s3-app-container
           Essential: true
           Image: !Ref ImageUri
           PortMappings:
