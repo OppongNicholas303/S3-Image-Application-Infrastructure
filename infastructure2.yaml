@@ -1,4 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  ImageUri:
+    Type: String
+    Description: "URI of the Docker image in ECR"
 
 Resources:
   # VPC
@@ -146,7 +150,7 @@ Resources:
       ContainerDefinitions:
         - Name: tag-finder-container
           Essential: true
-          Image: public.ecr.aws/z2w7p2s7/labs:latest
+          Image: !Ref ImageUri
           PortMappings:
             - ContainerPort: 3000
               # HostPort: 80
