@@ -244,6 +244,8 @@ Resources:
       SchedulingStrategy: REPLICA
       DesiredCount: 1
       HealthCheckGracePeriodSeconds: 60
+      DeploymentController:
+        Type: CODE_DEPLOY
       NetworkConfiguration:
         AwsvpcConfiguration:
           Subnets:
