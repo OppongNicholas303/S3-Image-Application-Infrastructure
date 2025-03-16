@@ -155,7 +155,7 @@ Resources:
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: <Your-S3-Bucket-Name>
+      BucketName: week5-lab-bucket-nicholas
       VersioningConfiguration:
         Status: Enabled
 
