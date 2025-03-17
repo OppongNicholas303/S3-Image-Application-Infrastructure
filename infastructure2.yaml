@@ -499,13 +499,13 @@ Resources:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: MyECSBuildProject
-      ServiceRole: !GetAtt CodeBuildRole.Arn  # Reference to the CodeBuild IAM role
+      ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
-        Type: CODEPIPELINE  # Use artifacts from CodePipeline
+        Type: CODEPIPELINE
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0  # Updated from standard:5.0 for better compatibility
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
       Source:
         Type: CODEPIPELINE
         BuildSpec: |
@@ -521,7 +521,7 @@ Resources:
                     "containerDefinitions": [
                       {
                         "name": "s3-app-container",
-                        "image": "#{ImageURI}",
+                        "image": "#{Image}",
                         "essential": true,
                         "portMappings": [
                           {
@@ -562,6 +562,8 @@ Resources:
             files:
               - TaskDefinition.json
               - appspec.yaml
+
+
 
             
   # # CodePipeline
@@ -696,7 +698,7 @@ Resources:
                 TaskDefinitionTemplatePath: TaskDefinition.json
                 AppSpecTemplateArtifact: TaskDefinitionOutput
                 AppSpecTemplatePath: appspec.yaml
-                ImageURI: SourceOutput
+                Image: SourceOutput
               InputArtifacts:
                 - Name: SourceOutput
                 - Name: TaskDefinitionOutput
