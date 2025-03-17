@@ -498,14 +498,14 @@ Resources:
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: MyECSBuildProject
-      ServiceRole: !GetAtt CodeBuildRole.Arn
-      Artifacts:
-        Type: CODEPIPELINE
+      # ... other properties ...
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+        EnvironmentVariables:
+          - Name: IMAGE_URI
+            Value: 677276083056.dkr.ecr.us-east-1.amazonaws.com/week5-lab-ecr-nicholas:latest
       Source:
         Type: CODEPIPELINE
         BuildSpec: |
@@ -521,7 +521,7 @@ Resources:
                     "containerDefinitions": [
                       {
                         "name": "s3-app-container",
-                        "image": "#{Image}",
+                        "image": "${IMAGE_URI}",
                         "essential": true,
                         "portMappings": [
                           {
@@ -562,7 +562,6 @@ Resources:
             files:
               - TaskDefinition.json
               - appspec.yaml
-
 
 
             
@@ -647,6 +646,8 @@ Resources:
                   - ecr:*
                   - cloudwatch:*
                 Resource: "*"
+
+                
   # CodePipeline
   CodePipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -698,7 +699,6 @@ Resources:
                 TaskDefinitionTemplatePath: TaskDefinition.json
                 AppSpecTemplateArtifact: TaskDefinitionOutput
                 AppSpecTemplatePath: appspec.yaml
-                Image: SourceOutput
               InputArtifacts:
                 - Name: SourceOutput
                 - Name: TaskDefinitionOutput
