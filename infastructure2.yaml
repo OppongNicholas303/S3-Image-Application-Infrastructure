@@ -313,6 +313,16 @@ Resources:
       Name: MyECSBuildProject
       Source:
         Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            build:
+              commands:
+                - echo "Building task definition"
+                - # Add commands to generate TaskDefinition.json
+          artifacts:
+            files:
+              - TaskDefinition.json
       Artifacts:
         Type: CODEPIPELINE
       Environment:
@@ -321,16 +331,6 @@ Resources:
         Type: LINUX_CONTAINER
       ServiceRole: !GetAtt CodeBuildRole.Arn
       TimeoutInMinutes: 10
-      BuildSpec: |
-        version: 0.2
-        phases:
-          build:
-            commands:
-              - echo "Building task definition"
-              - # Add commands to generate TaskDefinition.json
-        artifacts:
-          files:
-            - TaskDefinition.json  # Ensure this matches your output file
 
   # IAM Role for Auto Scaling
   ECSAutoScalingRole:
