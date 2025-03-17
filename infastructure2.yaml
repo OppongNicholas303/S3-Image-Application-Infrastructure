@@ -429,7 +429,7 @@ Resources:
       RoleArn: !GetAtt CodePipelineRole.Arn
       ArtifactStore:
         Type: S3
-        Location: tag-finder-s3
+        Location: week5-lab-bucket-nicholas
       Stages:
         - Name: Source
           Actions:
