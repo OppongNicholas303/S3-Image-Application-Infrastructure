@@ -404,69 +404,69 @@ Resources:
   #     ServiceRole: !GetAtt CodeBuildRole.Arn
   #     TimeoutInMinutes: 10
 
-  # # IAM Role for Auto Scaling
-  # ECSAutoScalingRole:
-  #   Type: AWS::IAM::Role
-  #   Properties:
-  #     RoleName: ECSAutoScalingRole
-  #     AssumeRolePolicyDocument:
-  #       Version: "2012-10-17"
-  #       Statement:
-  #         - Effect: Allow
-  #           Principal:
-  #             Service:
-  #               - application-autoscaling.amazonaws.com
-  #           Action:
-  #             - sts:AssumeRole
-  #     Policies:
-  #       - PolicyName: ECSAutoScalingPolicy
-  #         PolicyDocument:
-  #           Version: "2012-10-17"
-  #           Statement:
-  #             - Effect: Allow
-  #               Action:
-  #                 - ecs:UpdateService
-  #                 - ecs:DescribeServices
-  #                 - application-autoscaling:RegisterScalableTarget
-  #                 - application-autoscaling:DescribeScalableTargets
-  #                 - application-autoscaling:PutScalingPolicy
-  #               Resource: "*"
-  #             - Effect: Allow
-  #               Action:
-  #                 - cloudwatch:PutMetricAlarm
-  #                 - cloudwatch:DeleteAlarms
-  #                 - application-autoscaling:*
-  #               Resource: "*"
+  # IAM Role for Auto Scaling
+  ECSAutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ECSAutoScalingRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - application-autoscaling.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ECSAutoScalingPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                  - application-autoscaling:RegisterScalableTarget
+                  - application-autoscaling:DescribeScalableTargets
+                  - application-autoscaling:PutScalingPolicy
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - application-autoscaling:*
+                Resource: "*"
 
-  # # Auto Scaling Target
-  # ECSAutoScalingTarget:
-  #   Type: AWS::ApplicationAutoScaling::ScalableTarget
-  #   DependsOn: ECSService
-  #   Properties:
-  #     MaxCapacity: 3
-  #     MinCapacity: 1
-  #     ResourceId: !Join
-  #       - '/'
-  #       - - service
-  #         - !Ref Cluster
-  #         - !GetAtt ECSService.Name
-  #     RoleARN: !GetAtt ECSAutoScalingRole.Arn
-  #     ScalableDimension: ecs:service:DesiredCount
-  #     ServiceNamespace: ecs
+  # Auto Scaling Target
+  ECSAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: ECSService
+    Properties:
+      MaxCapacity: 3
+      MinCapacity: 1
+      ResourceId: !Join
+        - '/'
+        - - service
+          - !Ref Cluster
+          - !GetAtt ECSService.Name
+      RoleARN: !GetAtt ECSAutoScalingRole.Arn
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
 
-  # # Auto Scaling Policy
-  # ECSAutoScalingPolicy:
-  #   Type: AWS::ApplicationAutoScaling::ScalingPolicy
-  #   Properties:
-  #     PolicyName: ECSAutoScalingPolicy
-  #     PolicyType: TargetTrackingScaling
-  #     ScalingTargetId: !Ref ECSAutoScalingTarget
-  #     TargetTrackingScalingPolicyConfiguration:
-  #       TargetValue: 50
-  #       PredefinedMetricSpecification:
-  #         PredefinedMetricType: ECSServiceAverageCPUUtilization
-  #       ScaleInCooldown: 60
-  #       ScaleOutCooldown: 60
+  # Auto Scaling Policy
+  ECSAutoScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ECSAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ECSAutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 50
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
 
   # CodePipelineRole:
   #   Type: AWS::IAM::Role
@@ -494,78 +494,7 @@ Resources:
   #                 - cloudwatch:*
   #               Resource: "*"
 
-
-  CodeBuildProject:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      # ... other properties ...
-      Environment:
-        Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
-        EnvironmentVariables:
-          - Name: IMAGE_URI
-            Value: 677276083056.dkr.ecr.us-east-1.amazonaws.com/week5-lab-ecr-nicholas:latest
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: |
-          version: 0.2
-          phases:
-            build:
-              commands:
-                - echo "Building task definition and appspec files"
-                - |
-                  cat > TaskDefinition.json << 'EOF'
-                  {
-                    "family": "s3-app-task",
-                    "containerDefinitions": [
-                      {
-                        "name": "s3-app-container",
-                        "image": "${IMAGE_URI}",
-                        "essential": true,
-                        "portMappings": [
-                          {
-                            "containerPort": 3000,
-                            "hostPort": 3000
-                          }
-                        ],
-                        "logConfiguration": {
-                          "logDriver": "awslogs",
-                          "options": {
-                            "awslogs-group": "s3-app-log-group",
-                            "awslogs-region": "${AWS::Region}",
-                            "awslogs-stream-prefix": "ecs"
-                          }
-                        }
-                      }
-                    ],
-                    "requiresCompatibilities": ["FARGATE"],
-                    "cpu": "2048",
-                    "memory": "4096",
-                    "networkMode": "awsvpc"
-                  }
-                  EOF
-                - |
-                  cat > appspec.yaml << 'EOF'
-                  version: 0.0
-                  Resources:
-                    - TargetService:
-                        Type: AWS::ECS::Service
-                        Properties:
-                          TaskDefinition: <TASK_DEFINITION>
-                          LoadBalancerInfo:
-                            ContainerName: "s3-app-container"
-                            ContainerPort: 3000
-                          PlatformVersion: "LATEST"
-                  EOF
-          artifacts:
-            files:
-              - TaskDefinition.json
-              - appspec.yaml
-
-
-            
-  # # CodePipeline
+  # CodePipeline
   # CodePipeline:
   #   Type: AWS::CodePipeline::Pipeline
   #   Properties:
@@ -620,144 +549,61 @@ Resources:
   #               - Name: SourceOutput
   #               - Name: TaskDefinitionOutput
 
-
-  CodePipelineRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codepipeline.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: CodePipelinePolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:*
-                  - codebuild:*
-                  - codecommit:*
-                  - codedeploy:*
-                  - ecs:*
-                  - ecr:*
-                  - cloudwatch:*
-                Resource: "*"
-
-                
-  # CodePipeline
-  CodePipeline:
-    Type: AWS::CodePipeline::Pipeline
-    Properties:
-      RoleArn: !GetAtt CodePipelineRole.Arn
-      ArtifactStore:
-        Type: S3
-        Location: week5-lab-bucket-nicholas
-      Stages:
-        - Name: Source
-          Actions:
-            - Name: SourceAction
-              ActionTypeId:
-                Category: Source
-                Owner: AWS
-                Provider: ECR
-                Version: '1'
-              Configuration:
-                RepositoryName: week5-lab-ecr-nicholas
-                ImageTag: latest
-              OutputArtifacts:
-                - Name: SourceOutput
-        - Name: Build
-          Actions:
-            - Name: BuildTaskDefinition
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: '1'
-              Configuration:
-                ProjectName: !Ref CodeBuildProject
-              InputArtifacts:
-                - Name: SourceOutput
-              OutputArtifacts:
-                - Name: TaskDefinitionOutput
-        - Name: Deploy
-          Actions:
-            - Name: DeployAction
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Provider: CodeDeployToECS
-                Version: '1'
-              Configuration:
-                ApplicationName: !Ref CodeDeployApplication
-                DeploymentGroupName: !Ref CodeDeployGroup
-                TaskDefinitionTemplateArtifact: TaskDefinitionOutput
-                TaskDefinitionTemplatePath: TaskDefinition.json
-                AppSpecTemplateArtifact: TaskDefinitionOutput
-                AppSpecTemplatePath: appspec.yaml
-              InputArtifacts:
-                - Name: SourceOutput
-                - Name: TaskDefinitionOutput
-
   # CodeDeploy
-  CodeDeployApplication:
-    Type: AWS::CodeDeploy::Application
-    Properties:
-      ComputePlatform: ECS
+  # CodeDeployApplication:
+  #   Type: AWS::CodeDeploy::Application
+  #   Properties:
+  #     ComputePlatform: ECS
 
-  CodeDeployRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codedeploy.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: CodeDeployPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ecs:*
-                  - codedeploy:*
-                Resource: "*"
+  # CodeDeployRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: "2012-10-17"
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service: codedeploy.amazonaws.com
+  #           Action: sts:AssumeRole
+  #     Policies:
+  #       - PolicyName: CodeDeployPolicy
+  #         PolicyDocument:
+  #           Version: "2012-10-17"
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - ecs:*
+  #                 - codedeploy:*
+  #               Resource: "*"
 
   # CodeDeploy Deployment Group
-  CodeDeployGroup:
-    Type: AWS::CodeDeploy::DeploymentGroup
-    Properties:
-      ApplicationName: !Ref CodeDeployApplication
-      ServiceRoleArn: !GetAtt CodeDeployRole.Arn
-      DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
-      DeploymentStyle:
-        DeploymentType: BLUE_GREEN
-        DeploymentOption: WITH_TRAFFIC_CONTROL
-      BlueGreenDeploymentConfiguration:
-        DeploymentReadyOption:
-          ActionOnTimeout: CONTINUE_DEPLOYMENT
-          WaitTimeInMinutes: 0
-        TerminateBlueInstancesOnDeploymentSuccess:
-          Action: TERMINATE
-          TerminationWaitTimeInMinutes: 5
-      ECSServices:
-        - ClusterName: !Ref Cluster
-          ServiceName: !GetAtt ECSService.Name
-      LoadBalancerInfo:
-        TargetGroupPairInfoList:
-          - TargetGroups:
-              - Name: !Ref ECSLoadBalancerTargetGroup
-              - Name: !Ref ECSLoadBalancerTargetGroup2
-            ProdTrafficRoute:
-              ListenerArns:
-                - !Ref Listener
+  # CodeDeployGroup:
+  #   Type: AWS::CodeDeploy::DeploymentGroup
+  #   Properties:
+  #     ApplicationName: !Ref CodeDeployApplication
+  #     ServiceRoleArn: !GetAtt CodeDeployRole.Arn
+  #     DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
+  #     DeploymentStyle:
+  #       DeploymentType: BLUE_GREEN
+  #       DeploymentOption: WITH_TRAFFIC_CONTROL
+  #     BlueGreenDeploymentConfiguration:
+  #       DeploymentReadyOption:
+  #         ActionOnTimeout: CONTINUE_DEPLOYMENT
+  #         WaitTimeInMinutes: 0
+  #       TerminateBlueInstancesOnDeploymentSuccess:
+  #         Action: TERMINATE
+  #         TerminationWaitTimeInMinutes: 5
+  #     ECSServices:
+  #       - ClusterName: !Ref Cluster
+  #         ServiceName: !GetAtt ECSService.Name
+  #     LoadBalancerInfo:
+  #       TargetGroupPairInfoList:
+  #         - TargetGroups:
+  #             - Name: !Ref ECSLoadBalancerTargetGroup
+  #             - Name: !Ref ECSLoadBalancerTargetGroup2
+  #           ProdTrafficRoute:
+  #             ListenerArns:
+  #               - !Ref Listener
 
 Outputs:
   VPCId:
