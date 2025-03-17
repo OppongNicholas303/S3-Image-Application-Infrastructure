@@ -335,6 +335,166 @@ Resources:
       - Listener
 
   # CodeBuild Project
+  # CodeBuildProject:
+  #   Type: AWS::CodeBuild::Project
+  #   Properties:
+  #     Name: MyECSBuildProject
+  #     Source:
+  #       Type: CODEPIPELINE
+  #       BuildSpec: |
+  #         version: 0.2
+  #         phases:
+  #           build:
+  #             commands:
+  #               - echo "Building task definition and appspec files"
+  #               - |
+  #                 cat > TaskDefinition.json << 'EOF'
+  #                 {
+  #                   "family": "s3-app-task",
+  #                   "containerDefinitions": [
+  #                     {
+  #                       "name": "s3-app-container",
+  #                       "image": "<IMAGE1_NAME>",
+  #                       "essential": true,
+  #                       "portMappings": [
+  #                         {
+  #                           "containerPort": 3000,
+  #                           "hostPort": 3000
+  #                         }
+  #                       ],
+  #                       "logConfiguration": {
+  #                         "logDriver": "awslogs",
+  #                         "options": {
+  #                           "awslogs-group": "s3-app-log-group",
+  #                           "awslogs-region": "${AWS::Region}",
+  #                           "awslogs-stream-prefix": "ecs"
+  #                         }
+  #                       }
+  #                     }
+  #                   ],
+  #                   "requiresCompatibilities": ["FARGATE"],
+  #                   "cpu": "2048",
+  #                   "memory": "4096",
+  #                   "networkMode": "awsvpc"
+  #                 }
+  #                 EOF
+  #               - |
+  #                 cat > appspec.yaml << 'EOF'
+  #                 version: 0.0
+  #                 Resources:
+  #                   - TargetService:
+  #                       Type: AWS::ECS::Service
+  #                       Properties:
+  #                         TaskDefinition: <TASK_DEFINITION>
+  #                         LoadBalancerInfo:
+  #                           ContainerName: "s3-app-container"
+  #                           ContainerPort: 3000
+  #                         PlatformVersion: "LATEST"
+  #                 EOF
+  #         artifacts:
+  #           files:
+  #             - TaskDefinition.json
+  #             - appspec.yaml
+  #     Artifacts:
+  #       Type: CODEPIPELINE
+  #     Environment:
+  #       ComputeType: BUILD_GENERAL1_SMALL
+  #       Image: aws/codebuild/standard:5.0
+  #       Type: LINUX_CONTAINER
+  #     ServiceRole: !GetAtt CodeBuildRole.Arn
+  #     TimeoutInMinutes: 10
+
+  # # IAM Role for Auto Scaling
+  # ECSAutoScalingRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     RoleName: ECSAutoScalingRole
+  #     AssumeRolePolicyDocument:
+  #       Version: "2012-10-17"
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - application-autoscaling.amazonaws.com
+  #           Action:
+  #             - sts:AssumeRole
+  #     Policies:
+  #       - PolicyName: ECSAutoScalingPolicy
+  #         PolicyDocument:
+  #           Version: "2012-10-17"
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - ecs:UpdateService
+  #                 - ecs:DescribeServices
+  #                 - application-autoscaling:RegisterScalableTarget
+  #                 - application-autoscaling:DescribeScalableTargets
+  #                 - application-autoscaling:PutScalingPolicy
+  #               Resource: "*"
+  #             - Effect: Allow
+  #               Action:
+  #                 - cloudwatch:PutMetricAlarm
+  #                 - cloudwatch:DeleteAlarms
+  #                 - application-autoscaling:*
+  #               Resource: "*"
+
+  # # Auto Scaling Target
+  # ECSAutoScalingTarget:
+  #   Type: AWS::ApplicationAutoScaling::ScalableTarget
+  #   DependsOn: ECSService
+  #   Properties:
+  #     MaxCapacity: 3
+  #     MinCapacity: 1
+  #     ResourceId: !Join
+  #       - '/'
+  #       - - service
+  #         - !Ref Cluster
+  #         - !GetAtt ECSService.Name
+  #     RoleARN: !GetAtt ECSAutoScalingRole.Arn
+  #     ScalableDimension: ecs:service:DesiredCount
+  #     ServiceNamespace: ecs
+
+  # # Auto Scaling Policy
+  # ECSAutoScalingPolicy:
+  #   Type: AWS::ApplicationAutoScaling::ScalingPolicy
+  #   Properties:
+  #     PolicyName: ECSAutoScalingPolicy
+  #     PolicyType: TargetTrackingScaling
+  #     ScalingTargetId: !Ref ECSAutoScalingTarget
+  #     TargetTrackingScalingPolicyConfiguration:
+  #       TargetValue: 50
+  #       PredefinedMetricSpecification:
+  #         PredefinedMetricType: ECSServiceAverageCPUUtilization
+  #       ScaleInCooldown: 60
+  #       ScaleOutCooldown: 60
+
+  # CodePipelineRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: "2012-10-17"
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service: codepipeline.amazonaws.com
+  #           Action: sts:AssumeRole
+  #     Policies:
+  #       - PolicyName: CodePipelinePolicy
+  #         PolicyDocument:
+  #           Version: "2012-10-17"
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - s3:*
+  #                 - codebuild:*
+  #                 - codecommit:*
+  #                 - codedeploy:*
+  #                 - ecs:*
+  #                 - ecr:*
+  #                 - cloudwatch:*
+  #               Resource: "*"
+
+
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -354,7 +514,7 @@ Resources:
                     "containerDefinitions": [
                       {
                         "name": "s3-app-container",
-                        "image": "<IMAGE1_NAME>",
+                        "image": "#{ImageURI}",
                         "essential": true,
                         "portMappings": [
                           {
@@ -395,104 +555,6 @@ Resources:
             files:
               - TaskDefinition.json
               - appspec.yaml
-      Artifacts:
-        Type: CODEPIPELINE
-      Environment:
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0
-        Type: LINUX_CONTAINER
-      ServiceRole: !GetAtt CodeBuildRole.Arn
-      TimeoutInMinutes: 10
-
-  # IAM Role for Auto Scaling
-  ECSAutoScalingRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: ECSAutoScalingRole
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - application-autoscaling.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: ECSAutoScalingPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ecs:UpdateService
-                  - ecs:DescribeServices
-                  - application-autoscaling:RegisterScalableTarget
-                  - application-autoscaling:DescribeScalableTargets
-                  - application-autoscaling:PutScalingPolicy
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - cloudwatch:PutMetricAlarm
-                  - cloudwatch:DeleteAlarms
-                  - application-autoscaling:*
-                Resource: "*"
-
-  # Auto Scaling Target
-  ECSAutoScalingTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    DependsOn: ECSService
-    Properties:
-      MaxCapacity: 3
-      MinCapacity: 1
-      ResourceId: !Join
-        - '/'
-        - - service
-          - !Ref Cluster
-          - !GetAtt ECSService.Name
-      RoleARN: !GetAtt ECSAutoScalingRole.Arn
-      ScalableDimension: ecs:service:DesiredCount
-      ServiceNamespace: ecs
-
-  # Auto Scaling Policy
-  ECSAutoScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: ECSAutoScalingPolicy
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref ECSAutoScalingTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 50
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageCPUUtilization
-        ScaleInCooldown: 60
-        ScaleOutCooldown: 60
-
-  CodePipelineRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codepipeline.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: CodePipelinePolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:*
-                  - codebuild:*
-                  - codecommit:*
-                  - codedeploy:*
-                  - ecs:*
-                  - ecr:*
-                  - cloudwatch:*
-                Resource: "*"
 
   # # CodePipeline
   # CodePipeline:
@@ -600,12 +662,11 @@ Resources:
                 TaskDefinitionTemplatePath: TaskDefinition.json
                 AppSpecTemplateArtifact: TaskDefinitionOutput
                 AppSpecTemplatePath: appspec.yaml
-                Image1ArtifactName: SourceOutput
-                Image1ContainerName: s3-app-container
+                ImageURI: SourceOutput
               InputArtifacts:
                 - Name: SourceOutput
                 - Name: TaskDefinitionOutput
-                
+
   # CodeDeploy
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
