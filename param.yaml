@@ -1,3 +1,4 @@
-template-file-path: vpc.yaml
-parameters: {}
+template-file-path: infastructure2.yaml
+parameters:
+  ImageUri: 677276083056.dkr.ecr.us-east-1.amazonaws.com/week5-lab-ecr-nicholas:latest
 tags: {}
