@@ -454,6 +454,8 @@ Resources:
                 Version: '1'
               Configuration:
                 ProjectName: !Ref CodeBuildProject
+              InputArtifacts:
+                - Name: SourceOutput  # Add this line to specify input artifact
               OutputArtifacts:
                 - Name: TaskDefinitionOutput
         - Name: Deploy
@@ -471,6 +473,7 @@ Resources:
                 TaskDefinitionTemplatePath: TaskDefinition.json
               InputArtifacts:
                 - Name: SourceOutput
+                - Name: TaskDefinitionOutput  # Consider adding this too
 
   # CodeDeploy
   CodeDeployApplication:
