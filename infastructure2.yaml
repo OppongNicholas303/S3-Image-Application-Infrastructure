@@ -563,7 +563,7 @@ Resources:
               - TaskDefinition.json
               - appspec.yaml
 
-
+            
   # # CodePipeline
   # CodePipeline:
   #   Type: AWS::CodePipeline::Pipeline
