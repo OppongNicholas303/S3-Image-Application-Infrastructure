@@ -512,7 +512,7 @@ Resources:
                 Provider: ECR
                 Version: '1'
               Configuration:
-                RepositoryName: labs
+                RepositoryName: week5-lab-ecr-nicholas
                 ImageTag: latest
               OutputArtifacts:
                 - Name: SourceOutput
