@@ -494,6 +494,61 @@ Resources:
                   - cloudwatch:*
                 Resource: "*"
 
+  # # CodePipeline
+  # CodePipeline:
+  #   Type: AWS::CodePipeline::Pipeline
+  #   Properties:
+  #     RoleArn: !GetAtt CodePipelineRole.Arn
+  #     ArtifactStore:
+  #       Type: S3
+  #       Location: week5-lab-bucket-nicholas
+  #     Stages:
+  #       - Name: Source
+  #         Actions:
+  #           - Name: SourceAction
+  #             ActionTypeId:
+  #               Category: Source
+  #               Owner: AWS
+  #               Provider: ECR
+  #               Version: '1'
+  #             Configuration:
+  #               RepositoryName: week5-lab-ecr-nicholas
+  #               ImageTag: latest
+  #             OutputArtifacts:
+  #               - Name: SourceOutput
+  #       - Name: Build
+  #         Actions:
+  #           - Name: BuildTaskDefinition
+  #             ActionTypeId:
+  #               Category: Build
+  #               Owner: AWS
+  #               Provider: CodeBuild
+  #               Version: '1'
+  #             Configuration:
+  #               ProjectName: !Ref CodeBuildProject
+  #             InputArtifacts:
+  #               - Name: SourceOutput
+  #             OutputArtifacts:
+  #               - Name: TaskDefinitionOutput
+  #       - Name: Deploy
+  #         Actions:
+  #           - Name: DeployAction
+  #             ActionTypeId:
+  #               Category: Deploy
+  #               Owner: AWS
+  #               Provider: CodeDeployToECS
+  #               Version: '1'
+  #             Configuration:
+  #               ApplicationName: !Ref CodeDeployApplication
+  #               DeploymentGroupName: !Ref CodeDeployGroup
+  #               TaskDefinitionTemplateArtifact: TaskDefinitionOutput
+  #               TaskDefinitionTemplatePath: TaskDefinition.json
+  #               AppSpecTemplateArtifact: TaskDefinitionOutput
+  #               AppSpecTemplatePath: appspec.yaml
+  #             InputArtifacts:
+  #               - Name: SourceOutput
+  #               - Name: TaskDefinitionOutput
+
   # CodePipeline
   CodePipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -545,10 +600,12 @@ Resources:
                 TaskDefinitionTemplatePath: TaskDefinition.json
                 AppSpecTemplateArtifact: TaskDefinitionOutput
                 AppSpecTemplatePath: appspec.yaml
+                Image1ArtifactName: SourceOutput
+                Image1ContainerName: s3-app-container
               InputArtifacts:
                 - Name: SourceOutput
                 - Name: TaskDefinitionOutput
-
+                
   # CodeDeploy
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
