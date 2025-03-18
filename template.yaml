@@ -73,11 +73,11 @@ Resources:
     Properties:
       Domain: vpc
   
-  NATGateway2EIP:
-    Type: AWS::EC2::EIP
-    DependsOn: AttachGateway
-    Properties:
-      Domain: vpc
+  # NATGateway2EIP:
+  #   Type: AWS::EC2::EIP
+  #   DependsOn: AttachGateway
+  #   Properties:
+  #     Domain: vpc
   
   NATGateway1:
     Type: AWS::EC2::NatGateway
@@ -88,14 +88,14 @@ Resources:
         - Key: Name
           Value: s3AppNATGateway1
   
-  NATGateway2:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NATGateway2EIP.AllocationId
-      SubnetId: !Ref PublicSubnet2
-      Tags:
-        - Key: Name
-          Value: s3AppNATGateway2
+  # NATGateway2:
+  #   Type: AWS::EC2::NatGateway
+  #   Properties:
+  #     AllocationId: !GetAtt NATGateway2EIP.AllocationId
+  #     SubnetId: !Ref PublicSubnet2
+  #     Tags:
+  #       - Key: Name
+  #         Value: s3AppNATGateway2
 
   # Route Tables
   PublicRouteTable:
@@ -143,7 +143,7 @@ Resources:
     Properties:
       RouteTableId: !Ref PrivateRouteTable2
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NATGateway2
+      NatGatewayId: !Ref NATGateway1
 
   # Route Table Associations
   PublicSubnet1RouteTableAssociation:
