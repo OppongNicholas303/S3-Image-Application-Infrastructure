@@ -1,3 +1,4 @@
+
 AWSTemplateFormatVersion: '2010-09-09'
 Resources:
   # VPC
@@ -9,9 +10,10 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: Name
-          Value: Image-VPC
+          Value: s3App-VPC
 
-  # Public Subnets (for Load Balancer)
+
+  # Public Subnets
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -21,8 +23,10 @@ Resources:
       AvailabilityZone: !Select [ 0, !GetAZs "" ]
       Tags:
         - Key: Name
-          Value: ImagePublicSubnet1
+          Value: s3AppPublicSubnet1
 
+
+  # Public submet 2
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
@@ -32,30 +36,8 @@ Resources:
       AvailabilityZone: !Select [ 1, !GetAZs "" ]
       Tags:
         - Key: Name
-          Value: ImagePublicSubnet2
+          Value: S3AppPublicSubnet2
 
-  # Private Subnets (for ECS Service)
-  PrivateSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.3.0/24
-      MapPublicIpOnLaunch: false
-      AvailabilityZone: !Select [ 0, !GetAZs "" ]
-      Tags:
-        - Key: Name
-          Value: ImagePrivateSubnet1
-
-  PrivateSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.4.0/24
-      MapPublicIpOnLaunch: false
-      AvailabilityZone: !Select [ 1, !GetAZs "" ]
-      Tags:
-        - Key: Name
-          Value: ImagePrivateSubnet2
 
   # Internet Gateway
   InternetGateway:
@@ -66,63 +48,15 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  # NAT Gateways for private subnets
-  NATGateway1EIP:
-    Type: AWS::EC2::EIP
-    DependsOn: AttachGateway
-    Properties:
-      Domain: vpc
-  
-  NATGateway2EIP:
-    Type: AWS::EC2::EIP
-    DependsOn: AttachGateway
-    Properties:
-      Domain: vpc
-  
-  NATGateway1:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NATGateway1EIP.AllocationId
-      SubnetId: !Ref PublicSubnet1
-      Tags:
-        - Key: Name
-          Value: ImageNATGateway1
-  
-  NATGateway2:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NATGateway2EIP.AllocationId
-      SubnetId: !Ref PublicSubnet2
-      Tags:
-        - Key: Name
-          Value: ImageNATGateway2
 
-  # Route Tables
+  # Route Table
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: ImagePublicRouteTable
-  
-  PrivateRouteTable1:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: ImagePrivateRouteTable1
-  
-  PrivateRouteTable2:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: ImagePrivateRouteTable2
-
-  # Routes
+          Value: S3AppsPublicRouteTable
   PublicRoute:
     Type: AWS::EC2::Route
     DependsOn: AttachGateway
@@ -130,51 +64,24 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
-  
-  PrivateRoute1:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable1
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NATGateway1
-  
-  PrivateRoute2:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable2
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NATGateway2
-
-  # Route Table Associations
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet1
       RouteTableId: !Ref PublicRouteTable
-  
   PublicSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
-  
-  PrivateSubnet1RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable1
-  
-  PrivateSubnet2RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable2
+
 
   # ECS Cluster
-  ImageCluster:
+  s3AppCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: ImageCluster
+      ClusterName: s3AppCluster
+
 
   # Task Execution Role
   TaskExecutionRole:
@@ -203,7 +110,6 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: '*'
-  
   S3AccessRole:
     Type: AWS::IAM::Role
     Properties:
@@ -218,6 +124,7 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
 
   # CodeDeploy role for blue-green deployments
   CodeDeployServiceRole:
@@ -235,17 +142,19 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
 
+
   # Create log group
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: Image-log-group
+      LogGroupName: s3App-log-group
+
 
   # ECS Task Definition 
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: Image-task
+      Family: s3App-task
       RequiresCompatibilities:
         - FARGATE
       Cpu: '2048'
@@ -254,7 +163,7 @@ Resources:
       ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
       TaskRoleArn: !GetAtt S3AccessRole.Arn
       ContainerDefinitions:
-        - Name: Image-container
+        - Name: s3App-container
           Essential: true
           Image: 677276083056.dkr.ecr.us-east-1.amazonaws.com/week5-lab-ecr-nicholas:latest
           PortMappings:
@@ -262,11 +171,9 @@ Resources:
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-group: Image-log-group
+              awslogs-group: s3App-log-group
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
-  
-  # Security Groups
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -292,7 +199,6 @@ Resources:
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
-  
   ECSServiceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -307,11 +213,12 @@ Resources:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
+
   # Application Load Balancer
-  ImageLoadBalancer:
+  s3AppLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: Image-load-balancer
+      Name: s3App-load-balancer
       Subnets:
         - !Ref PublicSubnet1
         - !Ref PublicSubnet2
@@ -320,11 +227,12 @@ Resources:
       Scheme: internet-facing
       Type: application
 
+
   # Production target group (initially blue environment)
   BlueTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: Image-blue-target
+      Name: s3App-blue-target
       Port: 3000
       Protocol: HTTP
       VpcId: !Ref VPC
@@ -336,11 +244,12 @@ Resources:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
 
+
   # Green target group for new deployments
   GreenTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: Image-green-target
+      Name: s3App-green-target
       Port: 3000
       Protocol: HTTP
       VpcId: !Ref VPC
@@ -351,6 +260,7 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
+
 
   # Test listener for validation testing before switching traffic
   TestListener:
@@ -359,9 +269,10 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref GreenTargetGroup
-      LoadBalancerArn: !Ref ImageLoadBalancer
+      LoadBalancerArn: !Ref s3AppLoadBalancer
       Port: 8081
       Protocol: HTTP
+
 
   # Production listener (initially points to blue environment)
   ProductionListener:
@@ -370,16 +281,17 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref BlueTargetGroup
-      LoadBalancerArn: !Ref ImageLoadBalancer
+      LoadBalancerArn: !Ref s3AppLoadBalancer
       Port: 80
       Protocol: HTTP
+
 
   # ECS Service
   ECSService:
     Type: AWS::ECS::Service
     Properties:
-      ServiceName: Image-service
-      Cluster: !Ref ImageCluster
+      ServiceName: s3App-service
+      Cluster: !Ref s3AppCluster
       TaskDefinition: !Ref ECSTaskDefinition
       LaunchType: FARGATE
       SchedulingStrategy: REPLICA
@@ -388,14 +300,14 @@ Resources:
       NetworkConfiguration:
         AwsvpcConfiguration:
           Subnets:
-            - !Ref PrivateSubnet1
-            - !Ref PrivateSubnet2
-          AssignPublicIp: DISABLED
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+          AssignPublicIp: ENABLED
           SecurityGroups:
             - !Ref ECSServiceSecurityGroup
       LoadBalancers:
         - TargetGroupArn: !Ref BlueTargetGroup
-          ContainerName: Image-container
+          ContainerName: s3App-container
           ContainerPort: 3000
       PropagateTags: SERVICE
       EnableECSManagedTags: true
@@ -404,6 +316,7 @@ Resources:
     DependsOn:
       - ProductionListener
       - TestListener
+
 
   # IAM Role for Auto Scaling
   ECSAutoScalingRole:
@@ -438,6 +351,7 @@ Resources:
                   - application-autoscaling:*
                 Resource: "*"
 
+
   # Auto Scaling Target
   ECSAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
@@ -447,11 +361,12 @@ Resources:
       ResourceId: !Join
         - '/'
         - - service
-          - !Ref ImageCluster
+          - !Ref s3AppCluster
           - !GetAtt ECSService.Name
       RoleARN: !GetAtt ECSAutoScalingRole.Arn
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
+
 
   # Auto Scaling Policy
   ECSAutoScalingPolicy:
@@ -467,13 +382,15 @@ Resources:
         ScaleInCooldown: 60
         ScaleOutCooldown: 60
 
+
   # CodeDeploy Application
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
-      ApplicationName: Image-application
+      ApplicationName: s3App-application
       ComputePlatform: ECS
-      
+
+
   # CodeDeploy Deployment Group
   DeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
@@ -481,18 +398,19 @@ Resources:
       ApplicationName: !Ref CodeDeployApplication
       ServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
       DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
-      DeploymentGroupName: Image-deployment-group
+      DeploymentGroupName: s3App-deployment-group
       DeploymentStyle:
         DeploymentType: BLUE_GREEN
         DeploymentOption: WITH_TRAFFIC_CONTROL
       BlueGreenDeploymentConfiguration:
         DeploymentReadyOption:
           ActionOnTimeout: CONTINUE_DEPLOYMENT
+          # Removed the WaitTimeInMinutes parameter as it's causing the error
         TerminateBlueInstancesOnDeploymentSuccess:
           Action: TERMINATE
           TerminationWaitTimeInMinutes: 5
       ECSServices:
-        - ClusterName: !Ref ImageCluster
+        - ClusterName: !Ref s3AppCluster
           ServiceName: !GetAtt ECSService.Name
       LoadBalancerInfo:
         TargetGroupPairInfoList:
@@ -506,12 +424,12 @@ Resources:
               - Name: !GetAtt BlueTargetGroup.TargetGroupName
               - Name: !GetAtt GreenTargetGroup.TargetGroupName
 Outputs:
-  ImageLoadBalancerDNS:
+  s3AppLoadBalancerDNS:
     Description: The DNS name of the load balancer
-    Value: !GetAtt ImageLoadBalancer.DNSName
-  ImageLoadBalancerURL:
+    Value: !GetAtt s3AppLoadBalancer.DNSName
+  s3AppLoadBalancerURL:
     Description: URL of the load balancer
-    Value: !Join ['', ['http://', !GetAtt ImageLoadBalancer.DNSName]]
+    Value: !Join ['', ['http://', !GetAtt s3AppLoadBalancer.DNSName]]
   CodeDeployAppName:
     Description: CodeDeploy Application Name for ECS Blue-Green Deployments
     Value: !Ref CodeDeployApplication
