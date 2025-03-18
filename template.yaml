@@ -48,7 +48,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value:S3AppsPublicRouteTable
+          Value: S3AppsPublicRouteTable
   PublicRoute:
     Type: AWS::EC2::Route
     DependsOn: AttachGateway
