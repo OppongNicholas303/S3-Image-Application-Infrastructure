@@ -11,6 +11,8 @@ Resources:
       Tags:
         - Key: Name
           Value: s3App-VPC
+
+
   # Public Subnets
   PublicSubnet1:
     Type: AWS::EC2::Subnet
@@ -22,6 +24,8 @@ Resources:
       Tags:
         - Key: Name
           Value: s3AppPublicSubnet1
+
+
   # Public submet 2
   PublicSubnet2:
     Type: AWS::EC2::Subnet
@@ -33,6 +37,8 @@ Resources:
       Tags:
         - Key: Name
           Value: S3AppPublicSubnet2
+
+
   # Internet Gateway
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -41,6 +47,8 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
+
+
   # Route Table
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
@@ -66,11 +74,15 @@ Resources:
     Properties:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
+
+
   # ECS Cluster
   s3AppCluster:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: s3AppCluster
+
+
   # Task Execution Role
   TaskExecutionRole:
     Type: AWS::IAM::Role
@@ -112,6 +124,8 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+
   # CodeDeploy role for blue-green deployments
   CodeDeployServiceRole:
     Type: AWS::IAM::Role
@@ -127,11 +141,15 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+
+
   # Create log group
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: s3App-log-group
+
+
   # ECS Task Definition 
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -194,6 +212,8 @@ Resources:
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
+
+
   # Application Load Balancer
   s3AppLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -206,6 +226,8 @@ Resources:
         - !Ref LoadBalancerSecurityGroup
       Scheme: internet-facing
       Type: application
+
+
   # Production target group (initially blue environment)
   BlueTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -221,6 +243,8 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
+
+
   # Green target group for new deployments
   GreenTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -236,6 +260,8 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
+
+
   # Test listener for validation testing before switching traffic
   TestListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -246,6 +272,8 @@ Resources:
       LoadBalancerArn: !Ref s3AppLoadBalancer
       Port: 8081
       Protocol: HTTP
+
+
   # Production listener (initially points to blue environment)
   ProductionListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -256,6 +284,8 @@ Resources:
       LoadBalancerArn: !Ref s3AppLoadBalancer
       Port: 80
       Protocol: HTTP
+
+
   # ECS Service
   ECSService:
     Type: AWS::ECS::Service
@@ -286,6 +316,8 @@ Resources:
     DependsOn:
       - ProductionListener
       - TestListener
+
+
   # IAM Role for Auto Scaling
   ECSAutoScalingRole:
     Type: AWS::IAM::Role
@@ -318,6 +350,8 @@ Resources:
                   - cloudwatch:DeleteAlarms
                   - application-autoscaling:*
                 Resource: "*"
+
+
   # Auto Scaling Target
   ECSAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
@@ -332,6 +366,8 @@ Resources:
       RoleARN: !GetAtt ECSAutoScalingRole.Arn
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
+
+
   # Auto Scaling Policy
   ECSAutoScalingPolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
@@ -345,12 +381,16 @@ Resources:
           PredefinedMetricType: ECSServiceAverageCPUUtilization
         ScaleInCooldown: 60
         ScaleOutCooldown: 60
+
+
   # CodeDeploy Application
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
       ApplicationName: s3App-application
       ComputePlatform: ECS
+
+      
   # CodeDeploy Deployment Group
   DeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
