@@ -56,7 +56,7 @@ Parameters:
   DBName:
     Description: Name of the database
     Type: String
-    Default: rds-s3-ecs-db
+    Default: RdsEcsS3db
 
   DBInstanceClass:
     Description: RDS instance type
