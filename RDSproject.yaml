@@ -1,6 +1,22 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Comprehensive Infrastructure for S3 Image Upload Application (Networking, ECS, Load Balancing)'
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket for image uploads
+    Default: s3-image-upload-bucket-nic-amalitech
+
+  DatabaseEndpoint:
+    Type: String
+    Description: Endpoint of the RDS PostgreSQL database retrieved from SSM Parameter Store
+
+  DatabaseName:
+    Type: String
+    Description: Name of the database retrieved from SSM Parameter Store
+
 Resources:
-  # VPC
+  # VPC Resources
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -11,7 +27,6 @@ Resources:
         - Key: Name
           Value: s3App-VPC
 
-  # Public Subnets (for Load Balancer)
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -34,7 +49,6 @@ Resources:
         - Key: Name
           Value: s3AppPublicSubnet2
 
-  # Private Subnets (for ECS Service)
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -57,27 +71,20 @@ Resources:
         - Key: Name
           Value: s3AppPrivateSubnet2
 
-  # Internet Gateway
   InternetGateway:
     Type: AWS::EC2::InternetGateway
+
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  # NAT Gateways for private subnets
   NATGateway1EIP:
     Type: AWS::EC2::EIP
     DependsOn: AttachGateway
     Properties:
       Domain: vpc
-  
-  # NATGateway2EIP:
-  #   Type: AWS::EC2::EIP
-  #   DependsOn: AttachGateway
-  #   Properties:
-  #     Domain: vpc
   
   NATGateway1:
     Type: AWS::EC2::NatGateway
@@ -87,17 +94,7 @@ Resources:
       Tags:
         - Key: Name
           Value: s3AppNATGateway1
-  
-  # NATGateway2:
-  #   Type: AWS::EC2::NatGateway
-  #   Properties:
-  #     AllocationId: !GetAtt NATGateway2EIP.AllocationId
-  #     SubnetId: !Ref PublicSubnet2
-  #     Tags:
-  #       - Key: Name
-  #         Value: s3AppNATGateway2
 
-  # Route Tables
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -122,7 +119,6 @@ Resources:
         - Key: Name
           Value: s3AppPrivateRouteTable2
 
-  # Routes
   PublicRoute:
     Type: AWS::EC2::Route
     DependsOn: AttachGateway
@@ -145,7 +141,6 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NATGateway1
 
-  # Route Table Associations
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -170,13 +165,24 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable2
 
-  # ECS Cluster
-  s3AppCluster:
-    Type: AWS::ECS::Cluster
+  # S3 Bucket
+  ImageUploadBucket:
+    Type: AWS::S3::Bucket
     Properties:
-      ClusterName: s3AppCluster
+      BucketName: !Ref S3BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
 
-  # Task Execution Role
+  # IAM Roles
   TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -203,8 +209,8 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: '*'
-  
-  S3AccessRole:
+
+  AppTaskRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -216,32 +222,42 @@ Resources:
                 - ecs-tasks.amazonaws.com
             Action:
               - sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Policies:
+        - PolicyName: S3BucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${ImageUploadBucket.Arn}'
+                  - !Sub '${ImageUploadBucket.Arn}/*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                Resource: '*'
 
-  # CodeDeploy role for blue-green deployments
-  CodeDeployServiceRole:
-    Type: AWS::IAM::Role
+  # ECS Cluster
+  s3AppCluster:
+    Type: AWS::ECS::Cluster
     Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - codedeploy.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+      ClusterName: s3AppCluster
 
-  # Create log group
+  # Logging
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: s3App-log-group
 
-  # ECS Task Definition 
+  # ECS Task Definition
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -252,20 +268,25 @@ Resources:
       Memory: '4096'
       NetworkMode: awsvpc
       ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
-      TaskRoleArn: !GetAtt S3AccessRole.Arn
+      TaskRoleArn: !GetAtt AppTaskRole.Arn
       ContainerDefinitions:
         - Name: s3App-container
           Essential: true
-          Image: 677276083056.dkr.ecr.us-east-1.amazonaws.com/week5-lab-ecr-nicholas:latest
+          Image: 677276083056.dkr.ecr.us-east-2.amazonaws.com/aws-s3-rds-application:latest
+          Environment:
+            - Name: DATABASE_ENDPOINT
+              Value: !Ref DatabaseEndpoint
+            - Name: DATABASE_NAME
+              Value: !Ref DatabaseName
           PortMappings:
-            - ContainerPort: 3000
+            - ContainerPort: 3004
           LogConfiguration:
             LogDriver: awslogs
             Options:
               awslogs-group: s3App-log-group
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
-  
+
   # Security Groups
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -282,8 +303,8 @@ Resources:
           ToPort: 443
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
-          FromPort: 3000
-          ToPort: 3000
+          FromPort: 3004
+          ToPort: 3004
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 8081
@@ -300,14 +321,14 @@ Resources:
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 3000
-          ToPort: 3000
+          FromPort: 3004
+          ToPort: 3004
           SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
-  # Application Load Balancer
+  # Load Balancer
   s3AppLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -320,12 +341,11 @@ Resources:
       Scheme: internet-facing
       Type: application
 
-  # Production target group (initially blue environment)
   BlueTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: s3App-blue-target
-      Port: 3000
+      Port: 3004
       Protocol: HTTP
       VpcId: !Ref VPC
       TargetType: ip
@@ -336,12 +356,11 @@ Resources:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
 
-  # Green target group for new deployments
   GreenTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: s3App-green-target
-      Port: 3000
+      Port: 3004
       Protocol: HTTP
       VpcId: !Ref VPC
       TargetType: ip
@@ -352,7 +371,6 @@ Resources:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
 
-  # Test listener for validation testing before switching traffic
   TestListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
@@ -363,7 +381,6 @@ Resources:
       Port: 8081
       Protocol: HTTP
 
-  # Production listener (initially points to blue environment)
   ProductionListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
@@ -396,7 +413,7 @@ Resources:
       LoadBalancers:
         - TargetGroupArn: !Ref BlueTargetGroup
           ContainerName: s3App-container
-          ContainerPort: 3000
+          ContainerPort: 3004
       PropagateTags: SERVICE
       EnableECSManagedTags: true
       DeploymentController:
@@ -405,7 +422,7 @@ Resources:
       - ProductionListener
       - TestListener
 
-  # IAM Role for Auto Scaling
+  # Autoscaling
   ECSAutoScalingRole:
     Type: AWS::IAM::Role
     Properties:
@@ -438,7 +455,6 @@ Resources:
                   - application-autoscaling:*
                 Resource: "*"
 
-  # Auto Scaling Target
   ECSAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
     Properties:
@@ -453,7 +469,6 @@ Resources:
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
 
-  # Auto Scaling Policy
   ECSAutoScalingPolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
     Properties:
@@ -467,14 +482,28 @@ Resources:
         ScaleInCooldown: 60
         ScaleOutCooldown: 60
 
-  # CodeDeploy Application
+  # CodeDeploy
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
       ApplicationName: s3App-application
       ComputePlatform: ECS
       
-  # CodeDeploy Deployment Group
   DeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Properties:
@@ -505,16 +534,40 @@ Resources:
             TargetGroups:
               - Name: !GetAtt BlueTargetGroup.TargetGroupName
               - Name: !GetAtt GreenTargetGroup.TargetGroupName
+
 Outputs:
-  s3AppLoadBalancerDNS:
-    Description: The DNS name of the load balancer
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+
+  PublicSubnet1:
+    Description: First Public Subnet
+    Value: !Ref PublicSubnet1
+
+  PublicSubnet2:
+    Description: Second Public Subnet
+    Value: !Ref PublicSubnet2
+
+  PrivateSubnet1:
+    Description: First Private Subnet
+    Value: !Ref PrivateSubnet1
+
+  PrivateSubnet2:
+    Description: Second Private Subnet
+    Value: !Ref PrivateSubnet2
+
+  S3BucketName:
+    Description: Name of the S3 Bucket for Image Uploads
+    Value: !Ref ImageUploadBucket
+
+  LoadBalancerDNS:
+    Description: DNS Name of the Load Balancer
     Value: !GetAtt s3AppLoadBalancer.DNSName
-  s3AppLoadBalancerURL:
-    Description: URL of the load balancer
-    Value: !Join ['', ['http://', !GetAtt s3AppLoadBalancer.DNSName]]
+
   CodeDeployAppName:
-    Description: CodeDeploy Application Name for ECS Blue-Green Deployments
+    Description: CodeDeploy Application Name
     Value: !Ref CodeDeployApplication
+
   CodeDeployGroupName:
     Description: CodeDeploy Deployment Group Name
     Value: !Ref DeploymentGroup

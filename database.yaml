@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RDS PostgreSQL Database Resources for S3 Image Upload Application'
+
+Parameters:
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where the database will be deployed
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: First private subnet for the database
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Second private subnet for the database
+
+  DatabaseName:
+    Type: String
+    Description: Name of the database
+    Default: imagemetadatadb
+  
+  DatabaseUsername:
+    Type: String
+    Description: Username for the database
+    Default: dbadmin
+  
+  DatabasePassword:
+    Type: String
+    Description: Password for the database
+    NoEcho: true
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS PostgreSQL database in multiple AZs
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: MultiAZ-DB-Subnet-Group
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS PostgreSQL database
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0  # Restrict this in production
+      Tags:
+        - Key: Name
+          Value: Database-Security-Group
+
+  MultiAZPostgreSQLDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: !Ref DatabaseName
+      Engine: postgres
+      EngineVersion: '16'
+      MasterUsername: !Ref DatabaseUsername
+      MasterUserPassword: !Ref DatabasePassword
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: '20'
+      StorageType: gp2
+      MultiAZ: true
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: Multi-AZ-PostgreSQL-Database
+
+  # SSM Parameters for Database Credentials
+  DatabaseEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/endpoint
+      Type: String
+      Value: !GetAtt MultiAZPostgreSQLDatabase.Endpoint.Address
+
+  DatabasePortParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/port
+      Type: String
+      Value: "5432"
+
+  DatabaseNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/name
+      Type: String
+      Value: !Ref DatabaseName
+
+  DatabaseUsernameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/username
+      Type: String
+      Value: !Ref DatabaseUsername
+
+  DatabasePasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/password
+      Type: String
+      Value: !Ref DatabasePassword
+
+Outputs:
+  DatabaseEndpoint:
+    Description: Endpoint of the Multi-AZ RDS PostgreSQL database
+    Value: !GetAtt MultiAZPostgreSQLDatabase.Endpoint.Address
+  
+  DatabasePort:
+    Description: Port of the database
+    Value: "5432"
+  
+  DatabaseName:
+    Description: Name of the database
+    Value: !Ref DatabaseName
+
+  DatabaseUsernameSSMPath:
+    Description: SSM Parameter Store path for database username
+    Value: /s3-image-upload-app/database/username
+  
+  DatabasePasswordSSMPath:
+    Description: SSM Parameter Store path for database password
+    Value: /s3-image-upload-app/database/password
+  
+  DatabaseEndpointSSMPath:
+    Description: SSM Parameter Store path for database endpoint
+    Value: /s3-image-upload-app/database/endpoint

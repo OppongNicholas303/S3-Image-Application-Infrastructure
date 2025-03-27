@@ -1,101 +1,242 @@
 AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name that will be prefixed to resource names
+    Type: String
+    Default: rds-s3-ecs
+
+  VpcCIDR:
+    Description: CIDR block for the VPC
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: CIDR block for the public subnet in AZ 1
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2CIDR:
+    Description: CIDR block for the public subnet in AZ 2
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateSubnet1CIDR:
+    Description: CIDR block for the private subnet in AZ 1
+    Type: String
+    Default: 10.0.3.0/24
+
+  PrivateSubnet2CIDR:
+    Description: CIDR block for the private subnet in AZ 2
+    Type: String
+    Default: 10.0.4.0/24
+
+  DBSubnet1CIDR:
+    Description: CIDR block for the database subnet in AZ 1
+    Type: String
+    Default: 10.0.5.0/24
+
+  DBSubnet2CIDR:
+    Description: CIDR block for the database subnet in AZ 2
+    Type: String
+    Default: 10.0.6.0/24
+
+  DBUsername:
+    Description: Username for the RDS PostgreSQL database
+    Type: String
+    Default: rds-s3-ecsadmin
+    NoEcho: true
+
+  DBPassword:
+    Description: Password for the RDS PostgreSQL database
+    Type: String
+    Default: secret1234
+    NoEcho: true
+
+  DBName:
+    Description: Name of the database
+    Type: String
+    Default: rds-s3-ecs-db
+
+  DBInstanceClass:
+    Description: RDS instance type
+    Type: String
+    Default: db.t3.small
+
+  ContainerPort:
+    Description: Port that the container exposes
+    Type: Number
+    Default: 3004
+
 Resources:
+  # Systems Manager Parameter Store
+  DBNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/name
+      Type: String
+      Value: !Ref DBName
+      Description: "RDS PostgreSQL database name for rds-s3-ecs application"
+
+  DBUsernameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/username
+      Type: String
+      Value: !Ref DBUsername
+      Description: "RDS PostgreSQL username for rds-s3-ecs application"
+
+  DBPasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/password
+      Type: String  
+      Value: !Ref DBPassword
+      Description: "RDS PostgreSQL password for rds-s3-ecs application"
+
   # VPC
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.0.0.0/16
+      CidrBlock: !Ref VpcCIDR
       EnableDnsSupport: true
       EnableDnsHostnames: true
       Tags:
         - Key: Name
-          Value: s3App-VPC
-
+          Value: rds-s3-ecs-VPC
+  
   # Public Subnets (for Load Balancer)
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.1.0/24
+      CidrBlock: !Ref PublicSubnet1CIDR
       MapPublicIpOnLaunch: true
       AvailabilityZone: !Select [ 0, !GetAZs "" ]
       Tags:
         - Key: Name
-          Value: s3AppPublicSubnet1
+          Value: PublicSubnet1
 
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.2.0/24
+      CidrBlock: !Ref PublicSubnet2CIDR
       MapPublicIpOnLaunch: true
       AvailabilityZone: !Select [ 1, !GetAZs "" ]
       Tags:
         - Key: Name
-          Value: s3AppPublicSubnet2
-
-  # Private Subnets (for ECS Service)
+          Value: PublicSubnet2
+  
+  # Private Subnets (for ECS)
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.3.0/24
+      CidrBlock: !Ref PrivateSubnet1CIDR
       MapPublicIpOnLaunch: false
       AvailabilityZone: !Select [ 0, !GetAZs "" ]
       Tags:
         - Key: Name
-          Value: s3AppPrivateSubnet1
+          Value: PrivateSubnet1
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.4.0/24
+      CidrBlock: !Ref PrivateSubnet2CIDR
       MapPublicIpOnLaunch: false
       AvailabilityZone: !Select [ 1, !GetAZs "" ]
       Tags:
         - Key: Name
-          Value: s3AppPrivateSubnet2
-
+          Value: PrivateSubnet2
+  
   # Internet Gateway
   InternetGateway:
     Type: AWS::EC2::InternetGateway
+  
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
-
-  # NAT Gateways for private subnets
-  NATGateway1EIP:
+  
+  # NAT Gateway for Private Subnets
+  NatGatewayEIP:
     Type: AWS::EC2::EIP
     DependsOn: AttachGateway
     Properties:
       Domain: vpc
   
-  # NATGateway2EIP:
-  #   Type: AWS::EC2::EIP
-  #   DependsOn: AttachGateway
-  #   Properties:
-  #     Domain: vpc
-  
-  NATGateway1:
+  NatGateway:
     Type: AWS::EC2::NatGateway
     Properties:
-      AllocationId: !GetAtt NATGateway1EIP.AllocationId
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
       SubnetId: !Ref PublicSubnet1
       Tags:
         - Key: Name
-          Value: s3AppNATGateway1
-  
-  # NATGateway2:
-  #   Type: AWS::EC2::NatGateway
-  #   Properties:
-  #     AllocationId: !GetAtt NATGateway2EIP.AllocationId
-  #     SubnetId: !Ref PublicSubnet2
-  #     Tags:
-  #       - Key: Name
-  #         Value: s3AppNATGateway2
+          Value: NatGateway
+
+  # RDS Subnet Group (using private subnets)
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnet group for RDS PostgreSQL in private subnets"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: RDSPrivateSubnetGroup
+
+  # RDS Security Group
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for RDS PostgreSQL"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ECSServiceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: RDSSecurityGroup
+
+  # RDS PostgreSQL Instance
+  EcsRdsS3DB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: rds-s3-ecs
+      AllocatedStorage: 20
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: "17.2"
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      MultiAZ: true
+      PubliclyAccessible: false
+      StorageType: gp2
+      DBName: !Ref DBName 
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups:
+        - !GetAtt RDSSecurityGroup.GroupId
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: rds-s3-ecsDB
+
+  # Add endpoint to Parameter Store
+  DBEndpointParameter:
+    Type: AWS::SSM::Parameter
+    DependsOn: EcsRdsS3DB
+    Properties:
+      Name: /s3-image-upload-app/database/endpoint
+      Type: String
+      Value: !GetAtt EcsRdsS3DB.Endpoint.Address
+      Description: "RDS PostgreSQL endpoint for rds-s3-ecs application"
 
   # Route Tables
   PublicRouteTable:
@@ -104,25 +245,8 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: s3AppPublicRouteTable
+          Value: PublicRouteTable
   
-  PrivateRouteTable1:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: s3AppPrivateRouteTable1
-  
-  PrivateRouteTable2:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: s3AppPrivateRouteTable2
-
-  # Routes
   PublicRoute:
     Type: AWS::EC2::Route
     DependsOn: AttachGateway
@@ -131,21 +255,6 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
   
-  PrivateRoute1:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable1
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NATGateway1
-  
-  PrivateRoute2:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable2
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NATGateway1
-
-  # Route Table Associations
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -158,24 +267,40 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
   
+  # Private Route Table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable
+  
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+  
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable1
+      RouteTableId: !Ref PrivateRouteTable
   
   PrivateSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable2
-
+      RouteTableId: !Ref PrivateRouteTable
+  
   # ECS Cluster
-  s3AppCluster:
+  EcsRdsS3Cluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: s3AppCluster
-
+      ClusterName: RDSAppCluster
+  
   # Task Execution Role
   TaskExecutionRole:
     Type: AWS::IAM::Role
@@ -202,6 +327,8 @@ Resources:
                   - ecr:BatchGetImage
                   - logs:CreateLogStream
                   - logs:PutLogEvents
+                  - ssm:GetParameters
+                  - ssm:GetParameter
                 Resource: '*'
   
   S3AccessRole:
@@ -218,7 +345,8 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
-
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+  
   # CodeDeploy role for blue-green deployments
   CodeDeployServiceRole:
     Type: AWS::IAM::Role
@@ -234,18 +362,18 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
-
+  
   # Create log group
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: s3App-log-group
-
+      LogGroupName: rds-s3-ecs-log-group
+  
   # ECS Task Definition 
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: s3App-task
+      Family: rds-s3-ecs-task
       RequiresCompatibilities:
         - FARGATE
       Cpu: '2048'
@@ -254,19 +382,27 @@ Resources:
       ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
       TaskRoleArn: !GetAtt S3AccessRole.Arn
       ContainerDefinitions:
-        - Name: s3App-container
+        - Name: rds-s3-ecs-container
           Essential: true
-          Image: 677276083056.dkr.ecr.us-east-1.amazonaws.com/week5-lab-ecr-nicholas:latest
+          Image: 677276083056.dkr.ecr.us-east-2.amazonaws.com/aws-s3-rds-application:latest
           PortMappings:
-            - ContainerPort: 3000
+            - ContainerPort: !Ref ContainerPort
+          Secrets:
+            - Name: DB_HOST
+              ValueFrom: !Sub ${DBEndpointParameter}
+            - Name: DB_NAME
+              ValueFrom: !Sub ${DBNameParameter}
+            - Name: DB_USER
+              ValueFrom: !Sub ${DBUsernameParameter}
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub ${DBPasswordParameter}
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-group: s3App-log-group
+              awslogs-group: rds-s3-ecs-log-group
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
   
-  # Security Groups
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -282,8 +418,8 @@ Resources:
           ToPort: 443
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
-          FromPort: 3000
-          ToPort: 3000
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 8081
@@ -300,18 +436,18 @@ Resources:
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 3000
-          ToPort: 3000
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
           SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
-
+  
   # Application Load Balancer
-  s3AppLoadBalancer:
+  EcsRdsS3LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: s3App-load-balancer
+      Name: rds-s3-ecs-load-balancer
       Subnets:
         - !Ref PublicSubnet1
         - !Ref PublicSubnet2
@@ -319,13 +455,13 @@ Resources:
         - !Ref LoadBalancerSecurityGroup
       Scheme: internet-facing
       Type: application
-
+  
   # Production target group (initially blue environment)
   BlueTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: s3App-blue-target
-      Port: 3000
+      Name: rds-s3-ecs-blue-target
+      Port: !Ref ContainerPort
       Protocol: HTTP
       VpcId: !Ref VPC
       TargetType: ip
@@ -335,13 +471,13 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
-
+  
   # Green target group for new deployments
   GreenTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: s3App-green-target
-      Port: 3000
+      Name: rds-s3-ecs-green-target
+      Port: !Ref ContainerPort
       Protocol: HTTP
       VpcId: !Ref VPC
       TargetType: ip
@@ -351,7 +487,7 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
-
+  
   # Test listener for validation testing before switching traffic
   TestListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -359,10 +495,10 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref GreenTargetGroup
-      LoadBalancerArn: !Ref s3AppLoadBalancer
+      LoadBalancerArn: !Ref EcsRdsS3LoadBalancer
       Port: 8081
       Protocol: HTTP
-
+  
   # Production listener (initially points to blue environment)
   ProductionListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -370,16 +506,16 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref BlueTargetGroup
-      LoadBalancerArn: !Ref s3AppLoadBalancer
+      LoadBalancerArn: !Ref EcsRdsS3LoadBalancer
       Port: 80
       Protocol: HTTP
-
+  
   # ECS Service
   ECSService:
     Type: AWS::ECS::Service
     Properties:
-      ServiceName: s3App-service
-      Cluster: !Ref s3AppCluster
+      ServiceName: rds-s3-ecs-service
+      Cluster: !Ref EcsRdsS3Cluster
       TaskDefinition: !Ref ECSTaskDefinition
       LaunchType: FARGATE
       SchedulingStrategy: REPLICA
@@ -395,8 +531,8 @@ Resources:
             - !Ref ECSServiceSecurityGroup
       LoadBalancers:
         - TargetGroupArn: !Ref BlueTargetGroup
-          ContainerName: s3App-container
-          ContainerPort: 3000
+          ContainerName: rds-s3-ecs-container
+          ContainerPort: !Ref ContainerPort
       PropagateTags: SERVICE
       EnableECSManagedTags: true
       DeploymentController:
@@ -404,7 +540,7 @@ Resources:
     DependsOn:
       - ProductionListener
       - TestListener
-
+  
   # IAM Role for Auto Scaling
   ECSAutoScalingRole:
     Type: AWS::IAM::Role
@@ -437,7 +573,7 @@ Resources:
                   - cloudwatch:DeleteAlarms
                   - application-autoscaling:*
                 Resource: "*"
-
+  
   # Auto Scaling Target
   ECSAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
@@ -447,12 +583,12 @@ Resources:
       ResourceId: !Join
         - '/'
         - - service
-          - !Ref s3AppCluster
+          - !Ref EcsRdsS3Cluster
           - !GetAtt ECSService.Name
       RoleARN: !GetAtt ECSAutoScalingRole.Arn
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
-
+  
   # Auto Scaling Policy
   ECSAutoScalingPolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
@@ -466,14 +602,14 @@ Resources:
           PredefinedMetricType: ECSServiceAverageCPUUtilization
         ScaleInCooldown: 60
         ScaleOutCooldown: 60
-
+  
   # CodeDeploy Application
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
-      ApplicationName: s3App-application
+      ApplicationName: rds-s3-ecs-application
       ComputePlatform: ECS
-      
+  
   # CodeDeploy Deployment Group
   DeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
@@ -481,7 +617,7 @@ Resources:
       ApplicationName: !Ref CodeDeployApplication
       ServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
       DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
-      DeploymentGroupName: s3App-deployment-group
+      DeploymentGroupName: rds-s3-ecs-deployment-group
       DeploymentStyle:
         DeploymentType: BLUE_GREEN
         DeploymentOption: WITH_TRAFFIC_CONTROL
@@ -492,7 +628,7 @@ Resources:
           Action: TERMINATE
           TerminationWaitTimeInMinutes: 5
       ECSServices:
-        - ClusterName: !Ref s3AppCluster
+        - ClusterName: !Ref EcsRdsS3Cluster
           ServiceName: !GetAtt ECSService.Name
       LoadBalancerInfo:
         TargetGroupPairInfoList:
@@ -505,16 +641,24 @@ Resources:
             TargetGroups:
               - Name: !GetAtt BlueTargetGroup.TargetGroupName
               - Name: !GetAtt GreenTargetGroup.TargetGroupName
+
 Outputs:
-  s3AppLoadBalancerDNS:
+  EcsRdsS3LoadBalancerDNS:
     Description: The DNS name of the load balancer
-    Value: !GetAtt s3AppLoadBalancer.DNSName
-  s3AppLoadBalancerURL:
+    Value: !GetAtt EcsRdsS3LoadBalancer.DNSName
+  
+  EcsRdsS3LoadBalancerURL:
     Description: URL of the load balancer
-    Value: !Join ['', ['http://', !GetAtt s3AppLoadBalancer.DNSName]]
+    Value: !Join ['', ['http://', !GetAtt EcsRdsS3LoadBalancer.DNSName]]
+  
   CodeDeployAppName:
     Description: CodeDeploy Application Name for ECS Blue-Green Deployments
     Value: !Ref CodeDeployApplication
+  
   CodeDeployGroupName:
     Description: CodeDeploy Deployment Group Name
     Value: !Ref DeploymentGroup
+  
+  RDSEndpoint:
+    Description: "RDS PostgreSQL endpoint"
+    Value: !GetAtt EcsRdsS3DB.Endpoint.Address

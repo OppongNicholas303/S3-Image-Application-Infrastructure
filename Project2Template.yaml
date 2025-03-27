@@ -1,6 +1,31 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Comprehensive CloudFormation template for S3 Image Upload Application with VPC, ECS, RDS, S3, and Parameter Store'
+
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the database
+    Default: imagemetadatadb
+  
+  DatabaseUsername:
+    Type: String
+    Description: Username for the database
+    Default: dbadmin
+  
+  DatabasePassword:
+    Type: String
+    Description: Password for the database
+    Default: Oppong0243911336
+    NoEcho: true
+
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket for image uploads
+    Default: s3-image-upload-bucket-nic-amalitech
+
+
 Resources:
-  # VPC
+  # VPC Resources
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -11,7 +36,6 @@ Resources:
         - Key: Name
           Value: s3App-VPC
 
-  # Public Subnets (for Load Balancer)
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -34,7 +58,6 @@ Resources:
         - Key: Name
           Value: s3AppPublicSubnet2
 
-  # Private Subnets (for ECS Service)
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -57,27 +80,20 @@ Resources:
         - Key: Name
           Value: s3AppPrivateSubnet2
 
-  # Internet Gateway
   InternetGateway:
     Type: AWS::EC2::InternetGateway
+
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  # NAT Gateways for private subnets
   NATGateway1EIP:
     Type: AWS::EC2::EIP
     DependsOn: AttachGateway
     Properties:
       Domain: vpc
-  
-  # NATGateway2EIP:
-  #   Type: AWS::EC2::EIP
-  #   DependsOn: AttachGateway
-  #   Properties:
-  #     Domain: vpc
   
   NATGateway1:
     Type: AWS::EC2::NatGateway
@@ -87,17 +103,7 @@ Resources:
       Tags:
         - Key: Name
           Value: s3AppNATGateway1
-  
-  # NATGateway2:
-  #   Type: AWS::EC2::NatGateway
-  #   Properties:
-  #     AllocationId: !GetAtt NATGateway2EIP.AllocationId
-  #     SubnetId: !Ref PublicSubnet2
-  #     Tags:
-  #       - Key: Name
-  #         Value: s3AppNATGateway2
 
-  # Route Tables
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -122,7 +128,6 @@ Resources:
         - Key: Name
           Value: s3AppPrivateRouteTable2
 
-  # Routes
   PublicRoute:
     Type: AWS::EC2::Route
     DependsOn: AttachGateway
@@ -145,7 +150,6 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NATGateway1
 
-  # Route Table Associations
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -170,13 +174,142 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable2
 
-  # ECS Cluster
-  s3AppCluster:
-    Type: AWS::ECS::Cluster
+  ImageUploadBucket:
+    Type: AWS::S3::Bucket
     Properties:
-      ClusterName: s3AppCluster
+      BucketName: !Ref S3BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
 
-  # Task Execution Role
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS PostgreSQL database in multiple AZs
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: MultiAZ-DB-Subnet-Group
+
+  # DatabaseSecurityGroup:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties:
+  #     GroupDescription: Security group for RDS PostgreSQL database
+  #     VpcId: !Ref VPC
+  #     SecurityGroupIngress:
+  #       - IpProtocol: tcp
+  #         FromPort: 5432
+  #         ToPort: 5432
+  #         SourceSecurityGroupId: !Ref ECSServiceSecurityGroup
+  #       - IpProtocol: tcp
+  #         FromPort: 5432
+  #         ToPort: 5432
+  #         CidrIp: 10.0.0.0/16  # VPC CIDR block
+  #     Tags:
+  #       - Key: Name
+  #         Value: Database-Security-Group
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS PostgreSQL database
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0  # Allow access from anywhere
+      Tags:
+        - Key: Name
+          Value: Database-Security-Group
+
+  MultiAZPostgreSQLDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: !Ref DatabaseName
+      Engine: postgres
+      EngineVersion: '16'  # Latest major version as of 2024
+      MasterUsername: !Ref DatabaseUsername
+      MasterUserPassword: !Ref DatabasePassword
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: '20'
+      StorageType: gp2
+      MultiAZ: true
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: Multi-AZ-PostgreSQL-Database
+
+
+  DatabaseConnectionStringParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/connection-string
+      Type: String
+      Value: !Sub 
+        - postgresql://${Username}:${Password}@${Endpoint}:5432/${DatabaseName}
+        - Username: !Ref DatabaseUsername
+          Password: !Ref DatabasePassword
+          Endpoint: !GetAtt MultiAZPostgreSQLDatabase.Endpoint.Address
+          DatabaseName: !Ref DatabaseName
+
+  DatabaseEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/endpoint
+      Type: String
+      Value: !GetAtt MultiAZPostgreSQLDatabase.Endpoint.Address
+
+  DatabasePortParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/port
+      Type: String
+      Value: "5432"
+
+  DatabaseNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/name
+      Type: String
+      Value: !Ref DatabaseName
+
+  DatabaseUsernameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/username
+      Type: String
+      Value: !Ref DatabaseUsername
+
+  DatabasePasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/database/password
+      Type: String
+      Value: !Ref DatabasePassword
+
+  S3BucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /s3-image-upload-app/s3/bucket-name
+      Type: String
+      Value: !Ref S3BucketName
+
   TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -203,7 +336,56 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: '*'
-  
+
+  AppTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: S3BucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${ImageUploadBucket.Arn}'
+                  - !Sub '${ImageUploadBucket.Arn}/*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                Resource: '*'
+        - PolicyName: RDSDescribeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBInstances
+                  - rds:ListTagsForResource
+                Resource: '*'
+
+  s3AppCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: s3AppCluster
+
   S3AccessRole:
     Type: AWS::IAM::Role
     Properties:
@@ -219,7 +401,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
 
-  # CodeDeploy role for blue-green deployments
   CodeDeployServiceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -235,13 +416,11 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
 
-  # Create log group
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: s3App-log-group
 
-  # ECS Task Definition 
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -256,17 +435,26 @@ Resources:
       ContainerDefinitions:
         - Name: s3App-container
           Essential: true
-          Image: 677276083056.dkr.ecr.us-east-1.amazonaws.com/week5-lab-ecr-nicholas:latest
+          Image: 677276083056.dkr.ecr.us-east-2.amazonaws.com/aws-s3-rds-application:latest
           PortMappings:
-            - ContainerPort: 3000
+            - ContainerPort: 3004
           LogConfiguration:
             LogDriver: awslogs
             Options:
               awslogs-group: s3App-log-group
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
-  
-  # Security Groups
+          Environment:
+            - Name: SPRING_DATASOURCE_URL
+              Value: !Sub 
+                - jdbc:postgresql://${Endpoint}:5432/${DatabaseName}
+                - Endpoint: !GetAtt MultiAZPostgreSQLDatabase.Endpoint.Address
+                  DatabaseName: !Ref DatabaseName
+            - Name: SPRING_DATASOURCE_USERNAME
+              Value: !Ref DatabaseUsername
+            - Name: DATABASE_ENDPOINT
+              Value: !GetAtt MultiAZPostgreSQLDatabase.Endpoint.Address
+
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -282,8 +470,8 @@ Resources:
           ToPort: 443
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
-          FromPort: 3000
-          ToPort: 3000
+          FromPort: 3004
+          ToPort: 3004
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 8081
@@ -300,14 +488,13 @@ Resources:
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 3000
-          ToPort: 3000
+          FromPort: 3004
+          ToPort: 3004
           SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
-  # Application Load Balancer
   s3AppLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -320,12 +507,11 @@ Resources:
       Scheme: internet-facing
       Type: application
 
-  # Production target group (initially blue environment)
   BlueTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: s3App-blue-target
-      Port: 3000
+      Port: 3004
       Protocol: HTTP
       VpcId: !Ref VPC
       TargetType: ip
@@ -336,12 +522,11 @@ Resources:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
 
-  # Green target group for new deployments
   GreenTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       Name: s3App-green-target
-      Port: 3000
+      Port: 3004
       Protocol: HTTP
       VpcId: !Ref VPC
       TargetType: ip
@@ -352,7 +537,6 @@ Resources:
         - Key: deregistration_delay.timeout_seconds
           Value: "300"
 
-  # Test listener for validation testing before switching traffic
   TestListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
@@ -363,7 +547,6 @@ Resources:
       Port: 8081
       Protocol: HTTP
 
-  # Production listener (initially points to blue environment)
   ProductionListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
@@ -374,7 +557,6 @@ Resources:
       Port: 80
       Protocol: HTTP
 
-  # ECS Service
   ECSService:
     Type: AWS::ECS::Service
     Properties:
@@ -396,7 +578,7 @@ Resources:
       LoadBalancers:
         - TargetGroupArn: !Ref BlueTargetGroup
           ContainerName: s3App-container
-          ContainerPort: 3000
+          ContainerPort: 3004
       PropagateTags: SERVICE
       EnableECSManagedTags: true
       DeploymentController:
@@ -405,7 +587,6 @@ Resources:
       - ProductionListener
       - TestListener
 
-  # IAM Role for Auto Scaling
   ECSAutoScalingRole:
     Type: AWS::IAM::Role
     Properties:
@@ -438,7 +619,6 @@ Resources:
                   - application-autoscaling:*
                 Resource: "*"
 
-  # Auto Scaling Target
   ECSAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
     Properties:
@@ -453,7 +633,6 @@ Resources:
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
 
-  # Auto Scaling Policy
   ECSAutoScalingPolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
     Properties:
@@ -467,14 +646,12 @@ Resources:
         ScaleInCooldown: 60
         ScaleOutCooldown: 60
 
-  # CodeDeploy Application
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
       ApplicationName: s3App-application
       ComputePlatform: ECS
       
-  # CodeDeploy Deployment Group
   DeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Properties:
@@ -505,16 +682,56 @@ Resources:
             TargetGroups:
               - Name: !GetAtt BlueTargetGroup.TargetGroupName
               - Name: !GetAtt GreenTargetGroup.TargetGroupName
+
 Outputs:
   s3AppLoadBalancerDNS:
     Description: The DNS name of the load balancer
     Value: !GetAtt s3AppLoadBalancer.DNSName
+  
   s3AppLoadBalancerURL:
     Description: URL of the load balancer
     Value: !Join ['', ['http://', !GetAtt s3AppLoadBalancer.DNSName]]
+
   CodeDeployAppName:
     Description: CodeDeploy Application Name for ECS Blue-Green Deployments
     Value: !Ref CodeDeployApplication
+  
   CodeDeployGroupName:
     Description: CodeDeploy Deployment Group Name
     Value: !Ref DeploymentGroup
+
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+
+  S3BucketName:
+    Description: Name of the S3 Bucket for Image Uploads
+    Value: !Ref ImageUploadBucket
+
+  DatabaseEndpoint:
+    Description: Endpoint of the Multi-AZ RDS PostgreSQL database
+    Value: !GetAtt MultiAZPostgreSQLDatabase.Endpoint.Address
+  
+  DatabasePort:
+    Description: Port of the database
+    Value: "5432"
+  
+  DatabaseNameOutput:
+    Description: Name of the database
+    Value: !Ref DatabaseName
+
+  DatabaseUsernameSSMPath:
+    Description: SSM Parameter Store path for database username
+    Value: /s3-image-upload-app/database/username
+  
+  DatabasePasswordSSMPath:
+    Description: SSM Parameter Store path for database password
+    Value: /s3-image-upload-app/database/password
+  
+  DatabaseEndpointSSMPath:
+    Description: SSM Parameter Store path for database endpoint
+    Value: /s3-image-upload-app/database/endpoint
+
+  S3BucketNameSSMPath:
+    Description: SSM Parameter Store path for S3 Bucket Name
+    Value: /s3-image-upload-app/s3/bucket-name
