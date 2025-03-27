@@ -1,3 +1,3 @@
-template-file-path: template.yaml
+template-file-path: rds-with-s3-ecs-app.yaml
 parameters: {}
 tags: {}
