@@ -44,7 +44,7 @@ Parameters:
   DBUsername:
     Description: Username for the RDS PostgreSQL database
     Type: String
-    Default: admin
+    Default: admindb
     NoEcho: true
 
   DBPassword:
