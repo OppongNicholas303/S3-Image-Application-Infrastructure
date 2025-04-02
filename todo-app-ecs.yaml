@@ -5,7 +5,7 @@ Parameters:
   EnvironmentName:
     Type: String
     Default: todo-app
-    Description: A name that will be prefixed to resource names
+    Description: A name that will be prefixed to resource name
   
   ContainerPort:
     Type: Number
