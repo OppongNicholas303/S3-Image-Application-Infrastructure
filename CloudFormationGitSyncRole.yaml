@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: IAM Role for CloudFormation Git Sync
+
+Resources:
+  CloudFormationGitSyncRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CloudFormationGitSyncRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudFormationGitSyncPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # ✅ CloudFormation Stack Management
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ListStacks
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:DeleteStack
+                Resource: "*"
+
+              # ✅ AWS CodeStar Connections for GitHub/Bitbucket
+              - Effect: Allow
+                Action:
+                  - codestar-connections:UseConnection
+                  - codestar-connections:GetConnection
+                Resource: "*"  # Replace with your specific connection ARN if needed
+
+              # ✅ AWS CodeCommit (if using CodeCommit as the Git repo)
+              - Effect: Allow
+                Action:
+                  - codecommit:GitPull
+                  - codecommit:GetRepository
+                  - codecommit:ListRepositories
+                Resource: "*"
+
+              # ✅ Amazon S3 (if CloudFormation provisions S3 buckets)
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource: "*"
+
+              # ✅ Amazon ECS (if deploying containers)
+              - Effect: Allow
+                Action:
+                  - ecs:CreateCluster
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                  - ecs:DeleteCluster
+                  - application-autoscaling:*
+                Resource: "*"
+
+              # ✅ IAM Permissions (for CloudFormation to create roles)
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:AttachRolePolicy
+                  - iam:PassRole
+                  - iam:GetRole
+                Resource: "*"
+
+Outputs:
+  CloudFormationGitSyncRoleArn:
+    Description: ARN of the IAM Role for CloudFormation Git Sync
+    Value: !GetAtt CloudFormationGitSyncRole.Arn
