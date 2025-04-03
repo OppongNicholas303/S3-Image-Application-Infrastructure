@@ -158,7 +158,7 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable
 
-  # VPC Endpoint Security Group - NEW RESOURCE
+  # VPC Endpoint Security Group
   VPCEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -194,7 +194,7 @@ Resources:
         - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
       SecurityGroupIds:
-        - !Ref VPCEndpointSecurityGroup  # UPDATED
+        - !Ref VPCEndpointSecurityGroup
       VpcEndpointType: Interface
 
   # VPC Endpoint for ECR Docker
@@ -208,7 +208,7 @@ Resources:
         - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
       SecurityGroupIds:
-        - !Ref VPCEndpointSecurityGroup  # UPDATED
+        - !Ref VPCEndpointSecurityGroup
       VpcEndpointType: Interface
 
   # VPC Endpoint for S3 (Gateway type for ECR image layers)
@@ -221,7 +221,7 @@ Resources:
         - !Ref PrivateRouteTable
       VpcEndpointType: Gateway
 
-  # VPC Endpoint for CloudWatch Logs - NEW RESOURCE
+  # VPC Endpoint for CloudWatch Logs
   CloudWatchLogsEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -292,7 +292,7 @@ Resources:
                   - dynamodb:Scan
                   - dynamodb:Query
                   - dynamodb:DescribeTable
-                  - dynamodb:CreateTable  # Add this permission
+                  - dynamodb:CreateTable
                 Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}
 
   # CodeDeploy Role
@@ -369,7 +369,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp: 0.0.0.0/0  # Allows outbound HTTPS to VPC Endpoints
+          CidrIp: 0.0.0.0/0
 
   # Application Load Balancer
   ApplicationLoadBalancer:
@@ -455,6 +455,32 @@ Resources:
       - EcrApiEndpoint    
       - EcrDkrEndpoint    
       - S3Endpoint       
+
+  # Auto Scaling Target
+  ECSAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 4
+      MinCapacity: 1
+      ResourceId: !Sub service/${ECSCluster}/${ECSService.Name}
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+    DependsOn:
+      - ECSService
+
+  # Auto Scaling Policy (CPU Utilization)
+  ECSAutoScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${EnvironmentName}-cpu-scaling-policy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ECSAutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
 
   # CodeDeploy Application
   CodeDeployApplication:
