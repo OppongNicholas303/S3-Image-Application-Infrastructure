@@ -50,7 +50,7 @@ Resources:
       EnableDnsSupport: true
       EnableDnsHostnames: true
       Tags:
-        - Key  Key: Name
+        - Key: Name
           Value: !Sub ${EnvironmentName}-VPC
 
   # Public Subnets (for Load Balancer)
@@ -60,7 +60,7 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnet1CIDR
       MapPublicIpOnLaunch: true
-      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      AvailabilityZone: !Select [0, !GetAZs ""]
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-PublicSubnet1
@@ -71,7 +71,7 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnet2CIDR
       MapPublicIpOnLaunch: true
-      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      AvailabilityZone: !Select [1, !GetAZs ""]
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-PublicSubnet2
@@ -83,7 +83,7 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnet1CIDR
       MapPublicIpOnLaunch: false
-      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      AvailabilityZone: !Select [0, !GetAZs ""]
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-PrivateSubnet1
@@ -94,7 +94,7 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnet2CIDR
       MapPublicIpOnLaunch: false
-      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      AvailabilityZone: !Select [1, !GetAZs ""]
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-PrivateSubnet2
@@ -158,6 +158,21 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable
 
+  # VPC Endpoint Security Group - NEW RESOURCE
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for VPC Endpoints"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ECSServiceSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
   # VPC Endpoint for DynamoDB
   DynamoDBEndpoint:
     Type: AWS::EC2::VPCEndpoint
@@ -168,6 +183,58 @@ Resources:
         - !Ref PrivateRouteTable
       VpcEndpointType: Gateway
 
+  # VPC Endpoint for ECR API
+  EcrApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcId: !Ref VPC
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup  # UPDATED
+      VpcEndpointType: Interface
+
+  # VPC Endpoint for ECR Docker
+  EcrDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcId: !Ref VPC
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup  # UPDATED
+      VpcEndpointType: Interface
+
+  # VPC Endpoint for S3 (Gateway type for ECR image layers)
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref VPC
+      RouteTableIds:
+        - !Ref PrivateRouteTable
+      VpcEndpointType: Gateway
+
+  # VPC Endpoint for CloudWatch Logs - NEW RESOURCE
+  CloudWatchLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcId: !Ref VPC
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      VpcEndpointType: Interface
+      
   # ECS Cluster
   ECSCluster:
     Type: AWS::ECS::Cluster
@@ -202,30 +269,31 @@ Resources:
 
   # Task Role with DynamoDB permissions
   TaskRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: DynamoDBAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:GetItem
-                  - dynamodb:UpdateItem
-                  - dynamodb:DeleteItem
-                  - dynamodb:Scan
-                  - dynamodb:Query
-                  - dynamodb:DescribeTable
-                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}
+  Type: AWS::IAM::Role
+  Properties:
+    AssumeRolePolicyDocument:
+      Version: '2012-10-17'
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+    Policies:
+      - PolicyName: DynamoDBAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Scan
+                - dynamodb:Query
+                - dynamodb:DescribeTable
+                - dynamodb:CreateTable  # Add this permission
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}
 
   # CodeDeploy Role
   CodeDeployServiceRole:
@@ -290,7 +358,7 @@ Resources:
   ECSServiceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "Allow traffic from ALB to ECS"
+      GroupDescription: "Allow traffic from ALB to ECS and outbound to VPC Endpoints"
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -298,8 +366,10 @@ Resources:
           ToPort: !Ref ContainerPort
           SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
       SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0  # Allows outbound HTTPS to VPC Endpoints
 
   # Application Load Balancer
   ApplicationLoadBalancer:
@@ -382,6 +452,9 @@ Resources:
     DependsOn:
       - ProductionListener
       - TestListener
+      - EcrApiEndpoint    # ADDED dependency
+      - EcrDkrEndpoint    # ADDED dependency
+      - S3Endpoint        # ADDED dependency
 
   # CodeDeploy Application
   CodeDeployApplication:
